@@ -69,6 +69,7 @@ export function createHttp(
       ?.slice(14);
   const send = (c: Controller, msg: any) => {
     if (
+      service.ready &&
       !c.closed &&
       c.ws.readyState === WebSocket.OPEN &&
       (!c.activated || service.sessions.get(c.digest)?.lease?.id === c.leaseId)
@@ -89,6 +90,21 @@ export function createHttp(
         projectionEpoch: c.projectionEpoch,
         projectionRevision: String(c.revision++),
       });
+  };
+  const rejectLimited = (c: Controller, commandId: string) => {
+    void service
+      .enqueue(() =>
+        service.publication(() =>
+          send(c, {
+            protocolVersion: 1,
+            kind: "commandResult",
+            commandId,
+            status: "rejected",
+            code: "RATE_LIMITED",
+          }),
+        ),
+      )
+      .catch(() => {});
   };
   app.disable("x-powered-by");
   app.use((req, res, next) => {
@@ -122,21 +138,23 @@ export function createHttp(
     if (!limiter.allow("session:" + ip(req), 30))
       return void res.status(429).json({ code: "RATE_LIMITED" });
     try {
-      const result = await service.enqueue(() =>
-        service.authenticate(cookie(req), at),
-      );
-      if (result.credential)
-        res.setHeader(
-          "Set-Cookie",
-          `insidia_guest=${result.credential}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${options.production ? "; Secure" : ""}`,
-        );
-      else if (cookie(req))
-        res.setHeader(
-          "Set-Cookie",
-          `insidia_guest=${cookie(req)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${options.production ? "; Secure" : ""}`,
-        );
-      res.setHeader("Cache-Control", "no-store");
-      res.json({ protocolVersion: 1 });
+      await service.enqueue(async () => {
+        const result = await service.authenticate(cookie(req), at);
+        await service.publication(() => {
+          if (result.credential)
+            res.setHeader(
+              "Set-Cookie",
+              `insidia_guest=${result.credential}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${options.production ? "; Secure" : ""}`,
+            );
+          else if (cookie(req))
+            res.setHeader(
+              "Set-Cookie",
+              `insidia_guest=${cookie(req)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800${options.production ? "; Secure" : ""}`,
+            );
+          res.setHeader("Cache-Control", "no-store");
+          res.json({ protocolVersion: 1 });
+        });
+      });
     } catch {
       res.status(503).json({ code: "UNAVAILABLE" });
     }
@@ -213,199 +231,203 @@ export function createHttp(
           socket.destroy();
           return;
         }
-        wss.handleUpgrade(req, socket, head, (ws) => {
-          const c: Controller = {
-            ws,
-            digest,
-            leaseId: "",
-            projectionEpoch: randomUUID(),
-            revision: 1n,
-            subscribed: false,
-            alive: true,
-            activated: false,
-            closed: false,
-          };
-          let helloQueued = false;
-          let closeQueued = false;
-          const close = () => {
-            if (c.closed) return;
-            c.closed = true;
-            if (helloQueued && !closeQueued) {
-              closeQueued = true;
-              const closeAt = service.env.now();
-              void service
-                .enqueue(async () => {
-                  if (c.leaseId)
-                    await service.disconnect(digest, c.leaseId, closeAt);
-                  if (controllers.get(digest) === c) controllers.delete(digest);
-                })
-                .catch(() => {});
-            }
-          };
-          const fail = (code: number, reason: string) => {
-            close();
-            ws.close(code, reason);
-          };
-          const handshakeTimeout = setTimeout(
-            () => fail(4400, "HANDSHAKE_TIMEOUT"),
-            10000,
-          ).unref();
-          ws.on("close", () => {
-            clearTimeout(handshakeTimeout);
-            close();
-          });
-          ws.on("error", close);
-          ws.on("pong", () => {
-            c.alive = true;
-          });
-          send(c, {
-            protocolVersion: 1,
-            kind: "serverHello",
-            serverTime: service.env.now(),
-            heartbeatMs: 20000,
-          });
-          ws.on("message", (bytes, isBinary) => {
-            const receivedAt = service.env.now();
-            if (c.closed) return;
-            if (isBinary) {
-              fail(4400, "HANDSHAKE_PROTOCOL_ERROR");
-              return;
-            }
-            let msg: any;
-            try {
-              msg = JSON.parse(bytes.toString());
-            } catch {
-              fail(4400, "INVALID_JSON");
-              return;
-            }
-            if (!c.activated) {
-              if (helloQueued) {
+        await service.publication(() => {
+          if (canceled) return;
+          wss.handleUpgrade(req, socket, head, (ws) => {
+            const c: Controller = {
+              ws,
+              digest,
+              leaseId: "",
+              projectionEpoch: randomUUID(),
+              revision: 1n,
+              subscribed: false,
+              alive: true,
+              activated: false,
+              closed: false,
+            };
+            let helloQueued = false;
+            let closeQueued = false;
+            const close = () => {
+              if (c.closed) return;
+              c.closed = true;
+              if (helloQueued && !closeQueued) {
+                closeQueued = true;
+                const closeAt = service.env.now();
+                void service
+                  .enqueue(async () => {
+                    if (c.leaseId)
+                      await service.disconnect(digest, c.leaseId, closeAt);
+                    if (controllers.get(digest) === c)
+                      controllers.delete(digest);
+                  })
+                  .catch(() => {});
+              }
+            };
+            const fail = (code: number, reason: string) => {
+              close();
+              ws.close(code, reason);
+            };
+            const handshakeTimeout = setTimeout(
+              () => fail(4400, "HANDSHAKE_TIMEOUT"),
+              10000,
+            ).unref();
+            ws.on("close", () => {
+              clearTimeout(handshakeTimeout);
+              close();
+            });
+            ws.on("error", close);
+            ws.on("pong", () => {
+              c.alive = true;
+            });
+            send(c, {
+              protocolVersion: 1,
+              kind: "serverHello",
+              serverTime: service.env.now(),
+              heartbeatMs: 20000,
+            });
+            ws.on("message", (bytes, isBinary) => {
+              const receivedAt = service.env.now();
+              if (c.closed) return;
+              if (isBinary) {
                 fail(4400, "HANDSHAKE_PROTOCOL_ERROR");
                 return;
               }
-              helloQueued = true;
-              void service
-                .enqueue(async () => {
-                  if (!helloSchema.safeParse(msg).success) {
-                    fail(4400, "HANDSHAKE_PROTOCOL_ERROR");
-                    return;
-                  }
-                  if (c.closed) return;
-                  try {
-                    const acquisition = await service.acquire(
-                      digest,
-                      receivedAt,
-                      () => !c.closed,
-                    );
-                    c.leaseId = acquisition.leaseId;
-                    const old = controllers.get(digest);
-                    if (old && old !== c) {
-                      old.ws.close(4409, "CONNECTION_SUPERSEDED");
-                      old.closed = true;
+              let msg: any;
+              try {
+                msg = JSON.parse(bytes.toString());
+              } catch {
+                fail(4400, "INVALID_JSON");
+                return;
+              }
+              if (!c.activated) {
+                if (helloQueued) {
+                  fail(4400, "HANDSHAKE_PROTOCOL_ERROR");
+                  return;
+                }
+                helloQueued = true;
+                void service
+                  .enqueue(async () => {
+                    if (!helloSchema.safeParse(msg).success) {
+                      fail(4400, "HANDSHAKE_PROTOCOL_ERROR");
+                      return;
                     }
                     if (c.closed) return;
-                    controllers.set(digest, c);
-                    c.activated = true;
-                    clearTimeout(handshakeTimeout);
-                    send(c, {
-                      protocolVersion: 1,
-                      kind: "sessionReady",
-                      projectionEpoch: c.projectionEpoch,
-                      serverTime: service.env.now(),
-                      resumableRoomId:
-                        service.sessions.get(digest)?.binding?.roomId ?? null,
+                    try {
+                      const acquisition = await service.acquire(
+                        digest,
+                        receivedAt,
+                        () => !c.closed,
+                      );
+                      c.leaseId = acquisition.leaseId;
+                      await service.publication(() => {
+                        const old = controllers.get(digest);
+                        if (old && old !== c) {
+                          old.ws.close(4409, "CONNECTION_SUPERSEDED");
+                          old.closed = true;
+                        }
+                        if (c.closed) return;
+                        controllers.set(digest, c);
+                        c.activated = true;
+                        clearTimeout(handshakeTimeout);
+                        send(c, {
+                          protocolVersion: 1,
+                          kind: "sessionReady",
+                          projectionEpoch: c.projectionEpoch,
+                          serverTime: service.env.now(),
+                          resumableRoomId:
+                            service.sessions.get(digest)?.binding?.roomId ??
+                            null,
+                        });
+                        snapshot(c);
+                      });
+                    } catch (e) {
+                      fail(
+                        e instanceof RuleError ? 4401 : 4500,
+                        "AUTH_REQUIRED",
+                      );
+                    }
+                  })
+                  .catch(() => {});
+                return;
+              }
+              if (msg.kind === "clientHello") {
+                fail(4400, "HANDSHAKE_PROTOCOL_ERROR");
+                return;
+              }
+              if (!limiter.allow("command:" + digest, 120)) {
+                rejectLimited(c, msg.commandId);
+                return;
+              }
+              if (requestSchema.safeParse(msg).success) {
+                void service
+                  .enqueue(async () => {
+                    if (
+                      c.closed ||
+                      service.sessions.get(digest)?.lease?.id !== c.leaseId
+                    )
+                      return;
+                    await service.publication(() => {
+                      if (msg.kind === "state.request") snapshot(c);
+                      else {
+                        c.subscribed = msg.kind === "roomList.subscribe";
+                        if (c.subscribed)
+                          send(c, {
+                            protocolVersion: 1,
+                            kind: "roomListSnapshot",
+                            rooms: service.list(),
+                          });
+                      }
                     });
-                    snapshot(c);
-                  } catch (e) {
-                    fail(e instanceof RuleError ? 4401 : 4500, "AUTH_REQUIRED");
-                  }
-                })
-                .catch(() => {});
-              return;
-            }
-            if (msg.kind === "clientHello") {
-              fail(4400, "HANDSHAKE_PROTOCOL_ERROR");
-              return;
-            }
-            if (!limiter.allow("command:" + digest, 120)) {
-              send(c, {
-                protocolVersion: 1,
-                kind: "commandResult",
-                commandId: msg.commandId,
-                status: "rejected",
-                code: "RATE_LIMITED",
-              });
-              return;
-            }
-            if (requestSchema.safeParse(msg).success) {
+                  })
+                  .catch(() => {});
+                return;
+              }
+              const parsed = commandSchema.safeParse(msg);
+              if (!parsed.success) {
+                fail(4400, "INVALID_COMMAND");
+                return;
+              }
+              const command = parsed.data as Command;
+              if (
+                (command.type === "room.create" &&
+                  !limiter.allow("create:" + digest, 5)) ||
+                (command.type.startsWith("room.join") &&
+                  !limiter.allow("join:" + digest, 10)) ||
+                (command.type === "room.joinPrivate" &&
+                  !limiter.allow("code:" + ip(req), 15))
+              ) {
+                rejectLimited(c, command.commandId);
+                return;
+              }
               void service
                 .enqueue(async () => {
-                  if (
-                    c.closed ||
-                    service.sessions.get(digest)?.lease?.id !== c.leaseId
-                  )
-                    return;
-                  if (msg.kind === "state.request") snapshot(c);
-                  else {
-                    c.subscribed = msg.kind === "roomList.subscribe";
-                    if (c.subscribed)
-                      send(c, {
-                        protocolVersion: 1,
-                        kind: "roomListSnapshot",
-                        rooms: service.list(),
-                      });
+                  try {
+                    const result = await service.processCommand(
+                      digest,
+                      c.leaseId,
+                      command,
+                      receivedAt,
+                    );
+                    await service.publication(() => {
+                      send(c, result);
+                      if (!result.replayed) snapshot(c);
+                    });
+                  } catch (e) {
+                    if (e instanceof RuleError)
+                      await service.publication(() =>
+                        send(c, {
+                          protocolVersion: 1,
+                          kind: "commandResult",
+                          commandId: command.commandId,
+                          status: "rejected",
+                          code: e.code,
+                        }),
+                      );
+                    else throw e;
                   }
                 })
                 .catch(() => {});
-              return;
-            }
-            const parsed = commandSchema.safeParse(msg);
-            if (!parsed.success) {
-              fail(4400, "INVALID_COMMAND");
-              return;
-            }
-            const command = parsed.data as Command;
-            if (
-              (command.type === "room.create" &&
-                !limiter.allow("create:" + digest, 5)) ||
-              (command.type.startsWith("room.join") &&
-                !limiter.allow("join:" + digest, 10)) ||
-              (command.type === "room.joinPrivate" &&
-                !limiter.allow("code:" + ip(req), 15))
-            ) {
-              send(c, {
-                protocolVersion: 1,
-                kind: "commandResult",
-                commandId: command.commandId,
-                status: "rejected",
-                code: "RATE_LIMITED",
-              });
-              return;
-            }
-            void service
-              .enqueue(async () => {
-                try {
-                  const result = await service.processCommand(
-                    digest,
-                    c.leaseId,
-                    command,
-                    receivedAt,
-                  );
-                  send(c, result);
-                  if (!result.replayed) snapshot(c);
-                } catch (e) {
-                  if (e instanceof RuleError)
-                    send(c, {
-                      protocolVersion: 1,
-                      kind: "commandResult",
-                      commandId: command.commandId,
-                      status: "rejected",
-                      code: e.code,
-                    });
-                  else throw e;
-                }
-              })
-              .catch(() => {});
+            });
           });
         });
       })

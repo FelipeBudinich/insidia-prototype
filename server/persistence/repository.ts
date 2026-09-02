@@ -23,7 +23,12 @@ export interface Repository {
   epoch: string;
   initialize(): Promise<void>;
   load(family: string): Promise<any[]>;
-  commit(writes: Write[], receipt?: Receipt): Promise<void>;
+  commit(
+    writes: Write[],
+    receipt?: Receipt,
+    beforeCommit?: () => void,
+  ): Promise<void>;
+  publish(work: () => void): Promise<void>;
   receipt(principal: string, id: string): Promise<Receipt | undefined>;
   pending(): Promise<Receipt[]>;
   close(): Promise<void>;
@@ -117,6 +122,22 @@ export class PostgresRepository implements Repository {
     if (r.rows[0]?.epoch !== this.epoch || r.rows[0]?.fence !== this.fence)
       throw new Error("Server fence lost");
   }
+  async publish(work: () => void) {
+    const c = await this.pool.connect();
+    try {
+      await c.query("BEGIN");
+      await this.guard(c);
+      // Only synchronous buffer copies and local registry updates run here.
+      // A replacement owner cannot advance its fence until these finish.
+      work();
+      await c.query("COMMIT");
+    } catch (e) {
+      await c.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
   async encrypted(c: pg.PoolClient, value: any, owner: string) {
     const blob = this.security.encrypt(value, owner);
     await c.query("INSERT INTO insidia2.nonces VALUES($1,$2)", [
@@ -144,17 +165,20 @@ export class PostgresRepository implements Repository {
         const value = this.security.decrypt(row.body, owner);
         if (
           (family === "session" &&
-            (value.digest !== row.id || value.generation !== Number(row.version))) ||
+            (value.digest !== row.id ||
+              value.generation !== Number(row.version))) ||
           (family === "room" && value.roomId !== row.id) ||
           (family === "sealed" &&
             `${value.roomId}:${value.promptId}:${value.playerId}` !== row.id)
-        ) throw new Error("Encrypted record identity mismatch");
+        )
+          throw new Error("Encrypted record identity mismatch");
         if (family === "room") {
           const e = await c.query(
             "SELECT * FROM insidia2.events WHERE room_id=$1 ORDER BY state_version",
             [row.id],
           );
-          let previous = "genesis", sequence = 0;
+          let previous = "genesis",
+            sequence = 0;
           for (const event of e.rows) {
             const reservation = await c.query(
               "SELECT owner FROM insidia2.nonces WHERE nonce=$1",
@@ -189,7 +213,7 @@ export class PostgresRepository implements Repository {
       c.release();
     }
   }
-  async commit(writes: Write[], receipt?: Receipt) {
+  async commit(writes: Write[], receipt?: Receipt, beforeCommit?: () => void) {
     const c = await this.pool.connect();
     try {
       await c.query("BEGIN ISOLATION LEVEL SERIALIZABLE");
@@ -301,6 +325,7 @@ export class PostgresRepository implements Repository {
           ],
         );
       }
+      beforeCommit?.();
       await c.query("COMMIT");
     } catch (e) {
       await c.query("ROLLBACK").catch(() => {});
@@ -342,10 +367,21 @@ export class PostgresRepository implements Repository {
     return r.rows[0].now as string;
   }
   async recovered() {
-    await this.pool.query(
-      "UPDATE insidia2.epochs SET recovered_at=clock_timestamp() WHERE epoch=$1 AND recovered_at IS NULL",
-      [this.epoch],
-    );
+    const c = await this.pool.connect();
+    try {
+      await c.query("BEGIN");
+      await this.guard(c);
+      await c.query(
+        "UPDATE insidia2.epochs SET recovered_at=clock_timestamp() WHERE epoch=$1 AND recovered_at IS NULL",
+        [this.epoch],
+      );
+      await c.query("COMMIT");
+    } catch (e) {
+      await c.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      c.release();
+    }
   }
   async close() {
     if (this.owner) {
@@ -364,12 +400,16 @@ export class MemoryRepository implements Repository {
   receipts = new Map<string, Receipt>();
   history: Write[] = [];
   async initialize() {}
+  async publish(work: () => void) {
+    work();
+  }
   async load(family: string) {
     return [...this.records.entries()]
       .filter(([k]) => k.startsWith(family + ":"))
       .map(([, v]) => structuredClone(v));
   }
-  async commit(writes: Write[], receipt?: Receipt) {
+  async commit(writes: Write[], receipt?: Receipt, beforeCommit?: () => void) {
+    beforeCommit?.();
     for (const w of writes) {
       if (w.value === null) this.records.delete(w.family + ":" + w.id);
       else this.records.set(w.family + ":" + w.id, structuredClone(w.value));

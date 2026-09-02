@@ -58,6 +58,74 @@ async function setup() {
     advance: (ms: number) => (at = plus(at, ms)),
   };
 }
+test("database ownership loss stops already queued work and suppresses publication", async () => {
+  const f = await setup();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const first = f.service.enqueue(async () => {
+    await gate;
+  });
+  let ran = false;
+  const next = f.service.enqueue(async () => {
+    ran = true;
+  });
+  const rejected = assert.rejects(next, /UNAVAILABLE/);
+  f.service.fatal();
+  release();
+  await Promise.allSettled([first, rejected]);
+  assert.equal(ran, false);
+  await assert.rejects(
+    f.service.publication(() => {
+      ran = true;
+    }),
+    /UNAVAILABLE/,
+  );
+  assert.equal(ran, false);
+  assert.equal(f.service.ready, false);
+  await f.service.close();
+});
+test("a publication failure after commit retains the committed state and fails closed", async () => {
+  const f = await setup();
+  f.repo.publish = async () => {
+    throw new Error("Server fence lost");
+  };
+  await assert.rejects(
+    f.run(0, "room.create", {
+      displayName: "Ana",
+      visibility: "private",
+      additionalHumanPlayers: 0,
+      botPlayers: 2,
+    }),
+    /Server fence lost/,
+  );
+  assert.equal(f.service.ready, false);
+  const saved = await f.repo.load("room");
+  assert.equal(saved.length, 1);
+  assert.deepEqual([...f.service.rooms.values()], saved);
+  await f.service.close();
+});
+test("a reconnect closed during database work cannot replace the current lease", async () => {
+  const f = await setup(),
+    user = f.users[0];
+  let open = true;
+  const commit = f.repo.commit.bind(f.repo);
+  f.repo.commit = async (writes, receipt, beforeCommit) => {
+    open = false;
+    await commit(writes, receipt, beforeCommit);
+  };
+  await assert.rejects(
+    f.service.acquire(user.digest, f.now(), () => open),
+    /CONNECTION_CLOSED/,
+  );
+  assert.equal(f.service.sessions.get(user.digest)?.lease?.id, user.leaseId);
+  const saved = (await f.repo.load("session")).find(
+    (s) => s.digest === user.digest,
+  );
+  assert.equal(saved.lease.id, user.leaseId);
+  await f.service.close();
+});
 test("room commands persist, replay exactly, reject reused IDs and enforce single membership", async () => {
   const f = await setup(),
     commandId = randomUUID(),

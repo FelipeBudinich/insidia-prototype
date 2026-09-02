@@ -52,7 +52,10 @@ export class GameService extends EventEmitter {
     repo.onFatal = () => this.fatal();
   }
   enqueue<T>(work: () => Promise<T>): Promise<T> {
-    const result = this.chain.then(work);
+    const result = this.chain.then(() => {
+      demand(!this.shuttingDown, "UNAVAILABLE");
+      return work();
+    });
     this.chain = result.catch((e) => {
       if (!(e instanceof RuleError)) {
         console.error(
@@ -63,6 +66,13 @@ export class GameService extends EventEmitter {
       }
     });
     return result;
+  }
+  async publication(work: () => void) {
+    demand(!this.shuttingDown, "UNAVAILABLE");
+    await this.repo.publish(() => {
+      demand(!this.shuttingDown, "UNAVAILABLE");
+      work();
+    });
   }
   fatal() {
     if (this.shuttingDown) return;
@@ -156,10 +166,12 @@ export class GameService extends EventEmitter {
     effectiveAt: string,
     apply: () => any,
     receipt?: Receipt,
+    beforeCommit?: () => void,
   ): Promise<any> {
     const previousRooms = structuredClone(this.rooms),
       previousSessions = structuredClone(this.sessions),
       previousSealed = structuredClone(this.sealed);
+    let committed = false;
     try {
       const result = apply();
       const writes: Write[] = [];
@@ -216,29 +228,35 @@ export class GameService extends EventEmitter {
         delete receipt.value.leaseId;
         delete receipt.value.receivedAt;
       }
-      await this.repo.commit(writes, receipt);
+      await this.repo.commit(writes, receipt, beforeCommit);
+      committed = true;
       this.schedule();
-      for (const id of changed) this.emit("room", id);
-      if (changed.length) this.emit("directory");
-      for (const [digest, prior] of previousSessions) {
-        const next = this.sessions.get(digest);
-        if (prior.binding && !next?.binding)
-          this.emit(
-            "membershipEnded",
-            digest,
-            prior.binding.roomId,
-            type === "room.leave"
-              ? "left"
-              : type === "room.removePlayer"
-                ? "removed"
-                : "roomClosed",
-          );
-      }
+      await this.publication(() => {
+        for (const id of changed) this.emit("room", id);
+        if (changed.length) this.emit("directory");
+        for (const [digest, prior] of previousSessions) {
+          const next = this.sessions.get(digest);
+          if (prior.binding && !next?.binding)
+            this.emit(
+              "membershipEnded",
+              digest,
+              prior.binding.roomId,
+              type === "room.leave"
+                ? "left"
+                : type === "room.removePlayer"
+                  ? "removed"
+                  : "roomClosed",
+            );
+        }
+      });
       return result;
     } catch (e) {
-      this.rooms = previousRooms;
-      this.sessions = previousSessions;
-      this.sealed = previousSealed;
+      if (committed) this.fatal();
+      else {
+        this.rooms = previousRooms;
+        this.sessions = previousSessions;
+        this.sealed = previousSealed;
+      }
       throw e;
     }
   }
@@ -297,16 +315,22 @@ export class GameService extends EventEmitter {
     demand(isOpen(), "CONNECTION_CLOSED");
     const old = s.lease?.id,
       leaseId = this.env.id();
-    await this.atomic("ConnectionAcquired", at, () => {
-      demand(isOpen(), "CONNECTION_CLOSED");
-      s.lease = { id: leaseId, epoch: this.repo.epoch };
-      if (s.binding) {
-        const r = this.rooms.get(s.binding.roomId)!,
-          p = r.seats.find((p) => p.playerId === s.binding!.playerId)!;
-        p.connected = true;
-        this.presence(r, at);
-      }
-    });
+    await this.atomic(
+      "ConnectionAcquired",
+      at,
+      () => {
+        demand(isOpen(), "CONNECTION_CLOSED");
+        s.lease = { id: leaseId, epoch: this.repo.epoch };
+        if (s.binding) {
+          const r = this.rooms.get(s.binding.roomId)!,
+            p = r.seats.find((p) => p.playerId === s.binding!.playerId)!;
+          p.connected = true;
+          this.presence(r, at);
+        }
+      },
+      undefined,
+      () => demand(isOpen(), "CONNECTION_CLOSED"),
+    );
     return { leaseId, old };
   }
   async disconnect(digest: string, leaseId: string, at: string) {
