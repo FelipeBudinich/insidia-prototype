@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Impact ESM Engine Smoke Test</title>
+  <style>
+    body {
+      font-family: monospace;
+      margin: 2rem;
+      background: #111;
+      color: #f3f3f3;
+    }
+
+    pre {
+      padding: 1rem;
+      background: #1d1d1d;
+      border: 1px solid #333;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body data-status="pending">
+  <h1>Impact ESM Engine Smoke Test</h1>
+  <p>This page imports <code>lib/impact/impact.js</code> directly in the browser.</p>
+  <pre id="status">Loading…</pre>
+
+  <script type="module">
+    import ig from '../public/lib/impact/impact.js';
+
+    const results = {
+      engineEntryLoaded: true,
+      windowIgMatchesImport: window.ig === ig,
+      igMainExists: typeof ig.main === 'function',
+      gameClassPresent: typeof ig.Game?.extend === 'function',
+      classRegistryPresent:
+        typeof ig.registerClass === 'function' &&
+        typeof ig.getClass === 'function' &&
+        typeof ig.resolveClass === 'function'
+    };
+    const passed = Object.values(results).every((value) => value === true);
+
+    document.body.dataset.status = passed ? 'ok' : 'failed';
+    document.getElementById('status').textContent = JSON.stringify(results, null, 2);
+  </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+public/dist/
+.env
+.env.*
+!.env.example
+.data/
+test-results/
+*.log
+.DS_Store

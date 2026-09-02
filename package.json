@@ -1,0 +1,41 @@
+{
+  "name": "insidia-2",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "generate:protocol": "node tools/generate-protocol.mjs",
+    "dev": "npm run generate:protocol && node --env-file-if-exists=.env --import tsx --watch server/index.ts",
+    "dev:authoring": "node tools/authoring.mjs",
+    "build:client": "npm run generate:protocol && node tools/build-client.mjs",
+    "build:server": "tsc -p tsconfig.json",
+    "build": "npm run build:client && npm run build:server",
+    "heroku-postbuild": "npm run build",
+    "start": "node dist/server/index.js",
+    "migrate": "node dist/server/persistence/migrate.js",
+    "test": "node --import tsx --test test/*.test.ts && npm run test:upstream",
+    "test:upstream": "node --test vendor/theseus/test/esm-engine-runtime.test.mjs vendor/theseus/test/font-runtime.test.mjs vendor/theseus/test/gamepad-plugin.test.mjs vendor/theseus/test/input-bindings.test.mjs vendor/theseus/test/ig-debug.test.mjs"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "pg": "^8.16.3",
+    "ws": "^8.18.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.5",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.0",
+    "free-tex-packer-core": "^0.3.5",
+    "playwright": "^1.58.0",
+    "sharp": "0.35.4",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "8.2.2"
+  }
+}
