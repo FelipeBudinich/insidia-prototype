@@ -159,7 +159,7 @@ export class HomeScene {
       )
       .join(
         "",
-      )}</div><p>El banco contiene 60 almas en total: los pagos siempre vuelven a él. No hay deuda. Tienes 60 segundos para tu turno, 15 para desafiar o bloquear y 30 para elegir. Si no respondes, tomas almas, pasas o el servidor elige por ti, según la decisión.</p>`;
+      )}</div><p>Tienes 60 segundos para tu turno, 15 para desafiar o bloquear y 30 para elegir. Si no respondes, tomas almas, pasas o el servidor elige por ti, según la decisión.</p>`;
     document.getElementById("rules").showModal();
   }
 }
