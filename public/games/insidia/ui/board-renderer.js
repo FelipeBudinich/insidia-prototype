@@ -1,4 +1,12 @@
 import { sins, conspiracies, purposes, effectText } from "./strings.js";
+const CARD_RATIOS = {
+  sin: { width: 5, height: 7 },
+  conspiracy: { width: 7, height: 5 },
+};
+function cardBounds(kind, x, y, w) {
+  const ratio = CARD_RATIOS[kind];
+  return { x, y, w, h: (w * ratio.height) / ratio.width };
+}
 const P = {
   bg: "#16151b",
   panel: "#211e28",
@@ -84,7 +92,6 @@ export class BoardRenderer {
     x,
     y,
     w,
-    h,
     {
       back = false,
       selected = false,
@@ -93,7 +100,9 @@ export class BoardRenderer {
       order,
     } = {},
   ) {
-    const c = this.ctx,
+    const bounds = cardBounds("sin", x, y, w),
+      { h } = bounds,
+      c = this.ctx,
       s = sins[sin],
       color = back ? "#807051" : s.color;
     c.save();
@@ -180,6 +189,23 @@ export class BoardRenderer {
       this.text(order ?? "✓", x + w - 17, y + 4, 14, "#211c17", "center");
     }
     c.restore();
+    return bounds;
+  }
+  conspiracyCard(x, y, w) {
+    const bounds = cardBounds("conspiracy", x, y, w),
+      { h } = bounds;
+    this.rect(x, y, w, h, "#29212d", "#74566c", 6);
+    this.rect(x + 7, y + 7, w - 14, h - 14, null, "#594254", 3);
+    this.text("✧", x + w / 2, y + h * 0.4, 50, "#ba96b5", "center", true);
+    this.text(
+      "CONSPIRACIÓN",
+      x + w / 2,
+      y + h * 0.77,
+      8,
+      "#ba96b5",
+      "center",
+    );
+    return bounds;
   }
   player(p, x, y, isActive, isResponder) {
     const w = 210,
@@ -222,8 +248,17 @@ export class BoardRenderer {
       "center",
     );
     this.text(`${p.souls} ◇`, x - 51, y + 25, 20, P.gold, "center");
+    const mini = cardBounds("sin", 0, 0, 15);
     for (let i = 0; i < p.handCount; i++)
-      this.rect(x + 12 + i * 18, y + 12, 13, 24, "#39313f", "#817252", 2);
+      this.rect(
+        x + 12 + i * 18,
+        y + 12,
+        mini.w,
+        mini.h,
+        "#39313f",
+        "#817252",
+        2,
+      );
     p.faceUpSins.forEach((card, i) => {
       this.rect(
         x - w / 2 + i * 85 + 20,
@@ -313,12 +348,9 @@ export class BoardRenderer {
     this.text("EL BANCO", 800, 265, 10, P.muted, "center");
     this.text(board.soulBank + "", 800, 308, 47, P.gold, "center", true);
     this.text("ALMAS", 800, 342, 9, P.gold, "center");
-    this.card(null, 635, 286, 96, 140, { back: true });
+    this.card(null, 633, 286, 100, { back: true });
     this.text(board.sinDeckCount + " PECADOS", 683, 443, 9, P.muted, "center");
-    this.rect(869, 286, 96, 140, "#29212d", "#74566c", 6);
-    this.rect(876, 293, 82, 126, null, "#594254", 3);
-    this.text("✧", 917, 351, 50, "#ba96b5", "center", true);
-    this.text("CONSPIRACIÓN", 917, 392, 8, "#ba96b5", "center");
+    this.conspiracyCard(847, 306, 140);
     this.text(
       board.conspiracyDeckCount + " CONSPIRACIONES",
       917,
@@ -432,7 +464,6 @@ export class BoardRenderer {
     );
     const hand = self.hand,
       w = 132,
-      h = 191,
       gap = 19,
       total = hand.length * w + (hand.length - 1) * gap;
     hand.forEach((card, i) => {
@@ -442,7 +473,7 @@ export class BoardRenderer {
         eligible = self.prompt?.eligibleHandCardRefs?.includes(
           card.handCardRef,
         );
-      this.card(card.sin, x, y, w, h, {
+      const bounds = this.card(card.sin, x, y, w, {
         selected,
         order: selected
           ? this.selected.indexOf(card.handCardRef) + 1
@@ -452,20 +483,14 @@ export class BoardRenderer {
         this.regions.push({
           id: "hand:" + card.handCardRef,
           label: `Seleccionar ${sins[card.sin].name}`,
-          x,
-          y,
-          w,
-          h,
+          ...bounds,
           fn: () => this.selectCard(card.handCardRef),
         });
       else
         this.regions.push({
           id: "info:" + card.handCardRef,
           label: `Leer ${sins[card.sin].name}`,
-          x,
-          y,
-          w,
-          h,
+          ...bounds,
           fn: () => {
             this.modal = { kind: "info", sin: card.sin };
           },
@@ -691,21 +716,19 @@ export class BoardRenderer {
         (a) => a.type === "game.declareSin",
       );
       Object.entries(sins).forEach(([sin, s], i) => {
-        const x = 430 + (i % 4) * 187,
+        const w = 130,
+          x = 430 + (i % 4) * 187 + (166 - w) / 2,
           y = 269 + Math.floor(i / 4) * 208;
-        this.card(sin, x, y, 166, 182, { small: true });
+        const bounds = this.card(sin, x, y, w, { small: true });
         const enabled = action.allowedSins.includes(sin);
         if (!enabled) {
           this.ctx.fillStyle = "#16131bc9";
-          this.ctx.fillRect(x, y, 166, 182);
+          this.ctx.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
         }
         this.regions.push({
           id: "declare:" + sin,
           label: `Declarar ${s.name} por ${s.cost} almas`,
-          x,
-          y,
-          w: 166,
-          h: 182,
+          ...bounds,
           fn: () => {
             if (enabled) this.modal = { kind: "confirmSin", sin, action };
           },
