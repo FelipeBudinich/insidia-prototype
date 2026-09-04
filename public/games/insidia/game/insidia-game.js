@@ -66,6 +66,10 @@ export const InsidiaGame = ig.Game.extend({
   renderShell() {
     const state = this.store.view?.public.room.status;
     document.body.classList.toggle(
+      "landing",
+      !this.store.view && this.home.screen === "home",
+    );
+    document.body.classList.toggle(
       "match",
       state === "active" || state === "finished",
     );
