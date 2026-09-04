@@ -172,7 +172,6 @@ header {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  border-bottom: 1px solid var(--line);
   padding-bottom: 24px;
   margin-bottom: 50px;
 }
@@ -266,7 +265,6 @@ footer {
   font-size: 10px;
   letter-spacing: 0.13em;
   color: #736e7b;
-  border-top: 1px solid var(--line);
   padding: 25px 0 0;
   margin-top: 44px;
   text-transform: uppercase;
