@@ -2,6 +2,10 @@ import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { BoardRenderer } from "../public/games/insidia/ui/board-renderer.js";
 import { sins } from "../public/games/insidia/ui/strings.js";
+import {
+  DESIGN_HEIGHT,
+  DESIGN_WIDTH,
+} from "../public/games/insidia/resolution.js";
 
 type Bounds = { x: number; y: number; w: number; h: number };
 type Rectangle = Bounds & { fill?: string };
@@ -171,10 +175,10 @@ function assertControlBounds(f: ReturnType<typeof fixture>) {
   assert.equal(f.controls.children.length, f.renderer.regions.length);
   f.renderer.regions.forEach((region: any, i: number) => {
     const button = f.controls.children[i];
-    assert.equal(button.style.left, region.x / 16 + "%");
-    assert.equal(button.style.top, region.y / 9 + "%");
-    assert.equal(button.style.width, region.w / 16 + "%");
-    assert.equal(button.style.height, region.h / 9 + "%");
+    assert.equal(button.style.left, (region.x / DESIGN_WIDTH) * 100 + "%");
+    assert.equal(button.style.top, (region.y / DESIGN_HEIGHT) * 100 + "%");
+    assert.equal(button.style.width, (region.w / DESIGN_WIDTH) * 100 + "%");
+    assert.equal(button.style.height, (region.h / DESIGN_HEIGHT) * 100 + "%");
   });
 }
 

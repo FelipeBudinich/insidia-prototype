@@ -1,5 +1,6 @@
 import { sins, conspiracies, purposes, effectText } from "./strings.js";
 import { assets } from "../media/assets.js";
+import { DESIGN_HEIGHT, DESIGN_WIDTH } from "../resolution.js";
 import { drawImageAsset } from "./card-art.js";
 const CARD_RATIOS = {
   sin: { width: 5, height: 7 },
@@ -404,12 +405,12 @@ export class BoardRenderer {
       this.lastOpportunity = opportunity;
     }
     ctx.fillStyle = P.bg;
-    ctx.fillRect(0, 0, 1600, 900);
+    ctx.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
     const gradient = ctx.createRadialGradient(800, 365, 20, 800, 365, 680);
     gradient.addColorStop(0, "#302432");
     gradient.addColorStop(1, P.bg);
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 80, 1600, 600);
+    ctx.fillRect(0, 80, DESIGN_WIDTH, 600);
     this.text("INSIDIA", 38, 40, 27, P.gold, "left", true);
     this.text("NINGÚN ALMA ES INOCENTE", 205, 42, 10, P.muted);
     this.rect(36, 77, 1528, 1, P.line);
@@ -778,7 +779,7 @@ export class BoardRenderer {
   }
   shade() {
     this.ctx.fillStyle = "#0b0912df";
-    this.ctx.fillRect(0, 0, 1600, 900);
+    this.ctx.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
     this.regions = [];
   }
   drawModal() {
@@ -990,10 +991,10 @@ export class BoardRenderer {
       const b = document.createElement("button");
       b.textContent = r.label;
       b.setAttribute("aria-label", r.label);
-      b.style.left = r.x / 16 + "%";
-      b.style.top = r.y / 9 + "%";
-      b.style.width = r.w / 16 + "%";
-      b.style.height = r.h / 9 + "%";
+      b.style.left = (r.x / DESIGN_WIDTH) * 100 + "%";
+      b.style.top = (r.y / DESIGN_HEIGHT) * 100 + "%";
+      b.style.width = (r.w / DESIGN_WIDTH) * 100 + "%";
+      b.style.height = (r.h / DESIGN_HEIGHT) * 100 + "%";
       b.onclick = () => r.fn();
       target.append(b);
     }

@@ -3335,7 +3335,7 @@ At the pinned baseline, `npm ci` and `npm run bake` succeed. The upstream test s
 `index.html` must set `window.ImpactPrefix = '/'` before loading the module entry as a native ES module:
 
 ```html
-<canvas id="canvas" width="1600" height="900"></canvas>
+<canvas id="canvas" width="3840" height="2160"></canvas>
 <script>window.ImpactPrefix = '/';</script>
 <script type="module" src="./main.js"></script>
 ```
@@ -3345,9 +3345,7 @@ At the pinned baseline, `npm ci` and `npm run bake` succeed. The upstream test s
 ```js
 import ig from '../../lib/impact/impact.js';
 import './media/assets.js';
-
-const width = 1600;
-const height = 900;
+import { CANVAS_HEIGHT, CANVAS_WIDTH } from './resolution.js';
 
 const InsidiaGame = ig.Game.extend({
   init() { /* compose scene, store, and network services */ },
@@ -3355,7 +3353,7 @@ const InsidiaGame = ig.Game.extend({
   draw() { this.parent(); /* render the current projection */ }
 });
 
-ig.main('#canvas', InsidiaGame, 60, width, height, 1);
+ig.main('#canvas', InsidiaGame, 60, CANVAS_WIDTH, CANVAS_HEIGHT, 1);
 ```
 
 The shared TypeScript schemas are not directly browser-importable through Theseus's source server. `npm run generate:protocol` MUST emit browser-ready ESM validators/enums into `public/games/insidia/network/protocol.js`; backend code may import the TypeScript source under `shared/protocol/`.
@@ -3397,7 +3395,7 @@ The match view uses Theseus Canvas rendering for board, cards, tokens, hit regio
 
 Use `MousePrimary` and logical canvas coordinates for mouse/touch. Support keyboard focus and activation for equivalent DOM controls. User names should use native Canvas/DOM text or a font atlas that includes Spanish accents and `ñ`.
 
-The match uses a fixed 1600×900 logical canvas with `ig.system.scale = 1`. On resize, compute `s = min(viewportWidth / 1600, viewportHeight / 900)` and set the canvas's actual CSS layout `width` and `height` to `1600 × s` and `900 × s` pixels, centered with X/Y offsets. Do not use `transform: scale(...)`: Theseus derives pointer scale from `offsetWidth`, which excludes transforms. The aspect ratio remains 16:9 and unused space is letterboxed; axes are never stretched independently and backing dimensions remain 1600×900. DOM overlays share the same positioned wrapper and derive their CSS pixel geometry from the same `s` and offsets. Pointer tests MUST verify mapping at every supported scale. Portrait match view shows a landscape-orientation prompt; lobby/forms remain usable in portrait.
+The match uses a fixed 3840×2160 logical and backing canvas with `ig.system.scale = 1`. The board renderer retains its 1600×900 design coordinate system: scale the drawing context uniformly by 2.4 before drawing, restore it afterward, and divide Theseus pointer coordinates by 2.4 before hit testing. On resize, compute `s = min(viewportWidth / 3840, viewportHeight / 2160)` and set the canvas's actual CSS layout `width` and `height` to `3840 × s` and `2160 × s` pixels, centered with X/Y offsets. Do not use `transform: scale(...)`: Theseus derives pointer scale from `offsetWidth`, which excludes transforms. The aspect ratio remains 16:9 and unused space is letterboxed; axes are never stretched independently and backing dimensions remain 3840×2160. DOM overlays share the same positioned wrapper and derive their CSS pixel geometry from the 1600×900 design space. Pointer tests MUST verify mapping at every supported scale. Portrait match view shows a landscape-orientation prompt; lobby/forms remain usable in portrait.
 
 Card art sizes need a build budget because Theseus's bake pipeline includes every PNG/JPG under the game's media directory.
 

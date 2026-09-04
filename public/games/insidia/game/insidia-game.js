@@ -6,6 +6,11 @@ import { HomeScene, escape } from "../scenes/home-scene.js";
 import { LobbyScene } from "../scenes/lobby-scene.js";
 import { BoardRenderer } from "../ui/board-renderer.js";
 import { errors } from "../ui/strings.js";
+import {
+  fitCanvasToViewport,
+  RENDER_SCALE,
+  toDesignPoint,
+} from "../resolution.js";
 export const InsidiaGame = ig.Game.extend({
   init() {
     this.store = new ClientStore();
@@ -18,13 +23,13 @@ export const InsidiaGame = ig.Game.extend({
     this.superseded = false;
     ig.input.bind("MousePrimary", "click");
     this.resize = () => {
-      const s = Math.min(innerWidth / 1600, innerHeight / 900),
+      const layout = fitCanvasToViewport(innerWidth, innerHeight),
         stage = document.getElementById("stage"),
         canvas = document.getElementById("canvas");
-      stage.style.width = canvas.style.width = 1600 * s + "px";
-      stage.style.height = canvas.style.height = 900 * s + "px";
-      stage.style.left = (innerWidth - 1600 * s) / 2 + "px";
-      stage.style.top = (innerHeight - 900 * s) / 2 + "px";
+      stage.style.width = canvas.style.width = layout.width + "px";
+      stage.style.height = canvas.style.height = layout.height + "px";
+      stage.style.left = layout.left + "px";
+      stage.style.top = layout.top + "px";
     };
     window.addEventListener("resize", this.resize);
     this.resize();
@@ -52,7 +57,10 @@ export const InsidiaGame = ig.Game.extend({
       this.renderShell();
       this.lastVersion = this.store.version;
     }
-    this.board.update(ig.input.mouse, ig.input.pressed("click"));
+    this.board.update(
+      toDesignPoint(ig.input.mouse),
+      ig.input.pressed("click"),
+    );
     this.dispatch.retry();
   },
   renderShell() {
@@ -79,8 +87,16 @@ export const InsidiaGame = ig.Game.extend({
   },
   draw() {
     this.parent();
-    if (this.store.connected && this.store.view)
-      this.board.draw(ig.system.context);
+    if (this.store.connected && this.store.view) {
+      const context = ig.system.context;
+      context.save();
+      context.scale(RENDER_SCALE, RENDER_SCALE);
+      try {
+        this.board.draw(context);
+      } finally {
+        context.restore();
+      }
+    }
   },
   toast(text) {
     const el = document.getElementById("toast");
