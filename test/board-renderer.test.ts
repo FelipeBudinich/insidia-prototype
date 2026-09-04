@@ -1,568 +1,82 @@
-import test, { type TestContext } from "node:test";
-import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
-import sharp from "sharp";
-import { BoardRenderer } from "../public/games/insidia/ui/board-renderer.js";
-import {
-  conspiracies,
-  sins,
-} from "../public/games/insidia/ui/strings.js";
-import {
-  DESIGN_HEIGHT,
-  DESIGN_WIDTH,
-} from "../public/games/insidia/resolution.js";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import sharp from 'sharp';
+import { fileURLToPath } from 'node:url';
+import { BoardRenderer } from '../public/games/insidia/ui/board-renderer.js';
+import { boardLayout, activeNeighbor } from '../public/games/insidia/ui/board-layout.js';
+import { conspiracies, sins } from '../public/games/insidia/ui/strings.js';
 
-type Bounds = { x: number; y: number; w: number; h: number };
-type Rectangle = Bounds & { fill?: string };
-type DrawnImage = Bounds & { kind: string };
-type FixtureOptions = {
-  recentEffects?: any[];
-  revealedConspiracy?: { conspiracy: string } | null;
-  roomId?: string;
-};
-
-function fixture(
-  t: TestContext,
-  handCount = 2,
-  playerCount = 6,
-  options: FixtureOptions = {},
-) {
-  const rectangles: Rectangle[] = [],
-    fills: Rectangle[] = [],
-    images: DrawnImage[] = [],
-    texts: { text: string; x: number; y: number }[] = [],
-    sent: { type: string; payload: any }[] = [],
-    announcements: string[] = [];
-  let now = 0;
-  let path: Rectangle | undefined;
-  const ctx = {
-    fillStyle: "",
-    beginPath() { path = undefined; },
-    roundRect(x: number, y: number, w: number, h: number) {
-      path = { x, y, w, h };
-      rectangles.push(path);
-    },
-    fill() { if (path) path.fill = this.fillStyle; },
-    stroke() {},
-    clip() {},
-    save() {},
-    restore() {},
-    moveTo() {},
-    lineTo() {},
-    closePath() {},
-    arc() {},
-    ellipse() {},
-    createRadialGradient() { return { addColorStop() {} }; },
-    createLinearGradient() { return { addColorStop() {} }; },
-    fillRect(x: number, y: number, w: number, h: number) {
-      fills.push({ x, y, w, h, fill: this.fillStyle });
-    },
-    fillText(text: string, x: number, y: number) {
-      texts.push({ text, x, y });
-    },
-    drawImage(
-      data: { kind: string },
-      _sourceX: number,
-      _sourceY: number,
-      _sourceWidth: number,
-      _sourceHeight: number,
-      x: number,
-      y: number,
-      w: number,
-      h: number,
-    ) {
-      images.push({ kind: data.kind, x, y, w, h });
-    },
-    measureText(text: string) { return { width: text.length * 7 }; },
-  };
-  const controls = {
-    children: [] as any[],
-    replaceChildren() { this.children = []; },
-    append(child: any) { this.children.push(child); },
-  };
-  const announcer = {
-    value: "",
-    get textContent() { return this.value; },
-    set textContent(value: string) {
-      this.value = value;
-      if (value) announcements.push(value);
-    },
-  };
-  const elements = {
-    canvas: { style: { cursor: "" } },
-    rules: { open: false },
-    "game-controls": controls,
-    "game-announcer": announcer,
-  };
-  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
-  Object.defineProperty(globalThis, "document", {
-    configurable: true,
-    value: {
-      getElementById(id: keyof typeof elements) { return elements[id]; },
-      createElement() { return { style: {}, setAttribute() {} }; },
-    },
-  });
-  t.after(() => {
-    if (previousDocument)
-      Object.defineProperty(globalThis, "document", previousDocument);
-    else delete (globalThis as any).document;
-  });
-  const hand = Object.keys(sins).slice(0, handCount).map((sin, i) => ({
-    sin,
-    handCardRef: `card-${i}`,
-  }));
-  const players = Array.from({ length: playerCount }, (_, i) => ({
-    playerId: `player-${i}`,
-    seatIndex: i,
-    displayName: `Jugador ${i + 1}`,
-    kind: i ? "bot" : "human",
-    status: "active",
-    connected: true,
-    souls: 2,
-    handCount: 2,
-    faceUpSins: i === 1 ? [{ sin: "RABIA" }] : [],
-  }));
-  const view: any = {
-    roomId: options.roomId ?? "room-1",
-    stateVersion: 1,
-    public: {
-      room: { status: "active", visibility: "private" },
-      players,
-      board: {
-        soulBank: 28,
-        sinDeckCount: 20,
-        conspiracyDeckCount: 5,
-        publicCenter: [],
-        revealedConspiracy: options.revealedConspiracy ?? null,
-      },
-      turn: { turnNumber: 1, phase: "action", activePlayerId: "player-0" },
-      recentEffects: options.recentEffects ?? [],
-    },
-    self: {
-      playerId: "player-0",
-      hand,
-      legalActions: [
-        { type: "game.takeSouls", opportunityId: "opportunity" },
-        { type: "game.conspire", opportunityId: "opportunity" },
-        {
-          type: "game.declareSin",
-          opportunityId: "opportunity",
-          allowedSins: Object.keys(sins).filter((sin) => sins[sin].cost === 0),
-        },
-      ],
-    },
-  };
-  const store = { view, version: 1, pending: new Set(), now: () => now };
-  const image = (kind: string, width: number, height: number) => ({
-    loaded: true,
-    data: { kind },
-    width,
-    height,
-    getSourceRect() { return { x: 0, y: 0, width, height }; },
-  });
-  const pecadoFronts = Object.fromEntries(
-      Object.keys(sins).map((sin) => [sin, image(`front:${sin}`, 732, 1024)]),
-    ),
-    conspiracyFronts = Object.fromEntries(
-      Object.keys(conspiracies).map((conspiracy) => [
-        conspiracy,
-        image(`conspiracy-front:${conspiracy}`, 1024, 732),
-      ]),
-    );
-  const renderer = new BoardRenderer(
-    store,
-    { send(type: string, payload: any) { sent.push({ type, payload }); } },
-    { showRules() {} },
-    {
-      pecadoBack: image("pecado", 732, 1024),
-      conspiracyBack: image("conspiracy", 1024, 732),
-      conspiracyFronts,
-      pecadoFronts,
-    },
-  );
-  const draw = () => {
-    rectangles.length = fills.length = texts.length = images.length = 0;
-    renderer.draw(ctx);
-  };
-  draw();
-  return {
-    renderer,
-    store,
-    rectangles,
-    fills,
-    images,
-    texts,
-    controls,
-    announcements,
-    sent,
-    draw,
-    setNow(value: number) { now = value; },
-  };
+function view(count=6) {
+  return {roomId:'room-1',stateVersion:1,public:{room:{status:'active'},turn:{turnNumber:1,phase:'action',activePlayerId:'p0'},board:{soulBank:20,sinDeckCount:16,conspiracyDeckCount:6,publicCenter:[],revealedConspiracy:null},players:Array.from({length:count},(_,i)=>({playerId:`p${i}`,seatIndex:i,displayName:'Un nombre español largo',status:'active',connected:true,souls:2,handCount:2,faceUpSins:i===1?[{sin:'RABIA'},{sin:'GULA'}]:[]})),recentEffects:[]},self:{playerId:'p0',legalActions:[],hand:Object.keys(sins).slice(0,4).map((sin,i)=>({sin,handCardRef:`ref${i}`}))}} as any;
 }
-
-function bounds(r: Bounds): Bounds {
-  return { x: r.x, y: r.y, w: r.w, h: r.h };
-}
-
-function ratio(r: Bounds, width: number, height: number) {
-  assert(Math.abs(r.w * height - r.h * width) < 1e-9);
-}
-
-function assertControlBounds(f: ReturnType<typeof fixture>) {
-  assert.equal(f.controls.children.length, f.renderer.regions.length);
-  f.renderer.regions.forEach((region: any, i: number) => {
-    const button = f.controls.children[i];
-    assert.equal(button.style.left, (region.x / DESIGN_WIDTH) * 100 + "%");
-    assert.equal(button.style.top, (region.y / DESIGN_HEIGHT) * 100 + "%");
-    assert.equal(button.style.width, (region.w / DESIGN_WIDTH) * 100 + "%");
-    assert.equal(button.style.height, (region.h / DESIGN_HEIGHT) * 100 + "%");
+function overlap(a:any,b:any) {return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;}
+for(const [width,height] of [[1440,900],[1280,720],[1024,768],[844,390]]){
+  for(const count of [3,4,5,6])test(`${count} seats at ${width}×${height}: zones and four hand cards never collide`,()=>{
+    const v=view(count),l=boardLayout(width,height,v),regions=[...l.seats,...l.hand,l.decision];
+    for(let i=0;i<regions.length;i++){
+      const r=regions[i];assert(r.x>=0&&r.y>=0&&r.x+r.w<=width&&r.y+r.h<=height,JSON.stringify(r));
+      for(let j=i+1;j<regions.length;j++)assert(!overlap(r,regions[j]),`${i}/${j} overlap`);
+    }
+    assert.equal(l.seats.at(-1)?.playerId,'p0');
+    assert.deepEqual(l.seats.slice(0,-1).map(s=>s.playerId),Array.from({length:count-1},(_,i)=>`p${i+1}`));
+    for(const card of l.hand)assert(Math.abs(card.w*7-card.h*5)<1e-8);
+    for(const seat of l.seats.filter(s=>s.playerId!=='p0'))assert(!overlap(seat,l.stage),'resolution stage is reserved');
+    const before=l.seats.map(s=>[s.playerId,s.x,s.y]);v.public.players[1].status='eliminated';
+    assert.deepEqual(boardLayout(width,height,v).seats.map(s=>[s.playerId,s.x,s.y]),before);
   });
 }
+test('viewer rotation uses stored seat order and Herejía skips eliminated neighbors',()=>{
+  const v=view();v.self.playerId='p3';v.public.players[4].status='eliminated';
+  assert.deepEqual(boardLayout(1440,900,v).seats.map(s=>s.playerId),['p4','p5','p0','p1','p2','p3']);
+  assert.equal(activeNeighbor(v,'p3','right'),'p5');assert.equal(activeNeighbor(v,'p3','left'),'p2');
+});
+function rendererFixture() {
+  const texts:string[]=[],images:any[]=[];
+  const ctx:any={beginPath(){},roundRect(){},fill(){},stroke(){},clip(){},save(){},restore(){},moveTo(){},lineTo(){},closePath(){},arc(){},ellipse(){},rect(){},strokeRect(){},fillRect(){},createLinearGradient(){return {addColorStop(){}};},fillText(s:string){texts.push(s);},measureText(s:string){return {width:s.length*7};},drawImage(data:any,_sx:number,_sy:number,_sw:number,_sh:number,x:number,y:number,w:number,h:number){images.push({kind:data.kind,x,y,w,h});}};
+  const image=(kind:string)=>({loaded:true,data:{kind},width:700,height:1000,getSourceRect(){return{x:0,y:0,width:700,height:1000};}});
+  const v=view(),store:any={view:v,connected:true,now:()=>0,presentation:{reveals:[],cues:[],reducedMotion:false}};
+  const ui={render(){},hide(){},destroy(){},selected:[],selectedTarget:null,interaction:{state(){return {state:'idle'};}}};
+  const renderer=new BoardRenderer(store,{}, {},{pecadoBack:image('back'),pecadoFronts:Object.fromEntries(Object.keys(sins).map(s=>[s,image(s)])),conspiracyFronts:Object.fromEntries(Object.keys(conspiracies).map(s=>[s,image(s)]))},()=>ui);
+  renderer.resize(1440,900);renderer.update();
+  return {renderer,store,texts,images,draw(){texts.length=images.length=0;renderer.draw(ctx);}};
+}
+test('conspiracy art preserves landscape ratio and resources remain visible with two holds',()=>{
+  const f=rendererFixture();f.store.presentation.reveals=[{conspiracy:'HEREJIA',current:true},{conspiracy:'PERFIDIA',current:false}];f.draw();
+  assert(f.texts.some(t=>t.includes('Banco · 20')));assert(f.texts.includes('16 pecados'));assert(f.texts.includes('6 conspiraciones'));
+  for(const key of ['HEREJIA','PERFIDIA']){const art=f.images.find(i=>i.kind===key);assert(art);assert(Math.abs(art.w*5-art.h*7)<1e-8);}
+});
+test('exposures are public thumbnails; disconnect and result never draw private hand fronts',()=>{
+  const f=rendererFixture();f.draw();assert.equal(f.images.filter(i=>i.kind==='RABIA').length,2);
+  f.store.connected=false;f.draw();assert.equal(f.images.filter(i=>i.kind==='back'&&f.renderer.layout.hand.some(c=>c.x===i.x&&c.y===i.y)).length,4);assert.equal(f.images.filter(i=>i.kind==='ORGULLO').length,0);
+  f.store.connected=true;f.store.view.public.room.status='finished';f.draw();assert.equal(f.images.filter(i=>i.kind==='ORGULLO').length,0);
+});
+test('missing art keeps public name and resource information readable',()=>{
+  const f=rendererFixture();f.renderer.cardAssets.conspiracyFronts={};f.store.presentation.reveals=[{conspiracy:'INDIGENCIA',current:true}];f.draw();assert(f.texts.includes('Indigencia'));assert(f.texts.some(t=>t.includes('Banco')));
+});
+test('drawing does not expire reveals, reset selection, or mutate accepted authority',()=>{
+  const f=rendererFixture(),v=JSON.stringify(f.store.view);f.store.presentation.reveals=[{conspiracy:'HEREJIA',current:true}];const reveal=JSON.stringify(f.store.presentation.reveals);f.draw();f.draw();assert.equal(JSON.stringify(f.store.view),v);assert.equal(JSON.stringify(f.store.presentation.reveals),reveal);
+});
+test('all illustrated conspiracy fronts retain the expected source dimensions',async()=>{
+  await Promise.all(Object.keys(conspiracies).map(async name=>{const path=fileURLToPath(new URL(`../public/games/insidia/media/conspiraciones/${name.toLowerCase()}.webp`,import.meta.url)),m=await sharp(path).metadata();assert.equal(m.width,1024);assert.equal(m.height,732);}));
+});
 
-test("deck and opponent cards use the supplied backs at their exact ratios", (t) => {
-  const f = fixture(t);
-  const pecadoBacks = f.images.filter((image) => image.kind === "pecado");
-  assert.equal(pecadoBacks.length, 11);
-  const sinDeck = pecadoBacks.find((image) => image.w === 100)!;
-  assert.deepEqual(bounds(sinDeck), { x: 633, y: 286, w: 100, h: 140 });
-  ratio(sinDeck, 5, 7);
-  assert.equal(sinDeck.x + sinDeck.w / 2, 683);
-  assert.equal(sinDeck.y + sinDeck.h / 2, 356);
-  const conspiracyBacks = f.images.filter(
-    (image) => image.kind === "conspiracy",
-  );
-  assert.equal(conspiracyBacks.length, 1);
-  const conspiracyDeck = conspiracyBacks[0];
-  assert.deepEqual(bounds(conspiracyDeck), { x: 847, y: 306, w: 140, h: 100 });
-  ratio(conspiracyDeck, 7, 5);
-  assert.equal(conspiracyDeck.x + conspiracyDeck.w / 2, 917);
-  assert.equal(conspiracyDeck.y + conspiracyDeck.h / 2, 356);
-  assert.deepEqual(f.texts.filter((r) => /^(20 PECADOS|5 CONSPIRACIONES)$/.test(r.text)), [
-    { text: "20 PECADOS", x: 683, y: 443 },
-    { text: "5 CONSPIRACIONES", x: 917, y: 443 },
-  ]);
-  const miniCards = pecadoBacks.filter((image) => image.w === 15);
-  assert.equal(miniCards.length, 10);
-  for (const mini of miniCards) {
-    assert.equal(mini.w, 15);
-    assert.equal(mini.h, 21);
-    ratio(mini, 5, 7);
+test('landscape safe areas preserve hand hits and keep decisions inside the cutout-free viewport',()=>{
+  const l=boardLayout(844,390,view(),{left:47,right:47,bottom:21});
+  const regions=[...l.seats,...l.hand,l.decision];
+  for(const r of regions){assert(r.x>=47);assert(r.x+r.w<=797);assert(r.y+r.h<=369);}
+  for(const c of l.hand)assert(c.h>=96,'body and inspector each retain44px plus8px gap');
+});
+
+test('actual reveal art stays above resources and inside its reserved stage at every viewport',()=>{
+  for(const [w,h] of [[1440,900],[1280,720],[1024,768],[844,390]]){
+    const f=rendererFixture();f.renderer.resize(w,h);f.renderer.update();f.store.presentation.reveals=[{conspiracy:'HEREJIA',current:true},{conspiracy:'PERFIDIA',current:false}];f.draw();
+    for(const art of f.images.filter(i=>['HEREJIA','PERFIDIA'].includes(i.kind))){assert(art.y+art.h<=f.renderer.layout.stage.y+f.renderer.layout.stage.h);assert(art.y+art.h<f.renderer.layout.resources.y);}
   }
-  assert.equal(
-    f.rectangles.some((r) => r.fill === "#322437"),
-    false,
-    "the retired conspiracy nameplate must not be drawn",
-  );
-  const exposedLabel = f.rectangles.find((r) => r.fill === "#37262b")!;
-  assert.equal(exposedLabel.w, 80);
-  assert.equal(exposedLabel.h, 24);
 });
-
-test("all illustrated conspiracy fronts have the expected runtime dimensions", async () => {
-  await Promise.all(
-    Object.keys(conspiracies).map(async (conspiracy) => {
-      const path = fileURLToPath(
-        new URL(
-          `../public/games/insidia/media/conspiraciones/${conspiracy.toLowerCase()}.webp`,
-          import.meta.url,
-        ),
-      );
-      const metadata = await sharp(path).metadata();
-      assert.equal(metadata.width, 1024, conspiracy);
-      assert.equal(metadata.height, 732, conspiracy);
-    }),
-  );
-});
-
-test("active conspiracies replace the center widgets with illustrated fronts", (t) => {
-  const f = fixture(t),
-    controlIds = f.renderer.regions.map((region: any) => region.id);
-  for (const [conspiracy, [name, description]] of Object.entries(conspiracies)) {
-    f.store.view.public.board.revealedConspiracy = { conspiracy };
-    f.store.view.stateVersion++;
-    f.store.version++;
-    f.draw();
-
-    const front = f.images.find(
-      (image) => image.kind === `conspiracy-front:${conspiracy}`,
-    )!;
-    assert.deepEqual(bounds(front), {
-      x: 600,
-      y: 255,
-      w: 400,
-      h: 2000 / 7,
-    });
-    ratio(front, 7, 5);
-    assert.equal(f.images.some((image) => image.kind === "conspiracy"), false);
-    assert.equal(f.texts.some((text) => text.text === "EL BANCO"), false);
-    assert.equal(f.texts.some((text) => text.text === name.toUpperCase()), true);
-    assert.equal(
-      f.texts.map((text) => text.text).join(" ").includes(description),
-      true,
-    );
-    assert.deepEqual(
-      f.renderer.regions.map((region: any) => region.id),
-      controlIds,
-    );
-  }
-  assert.equal(f.announcements.length, Object.keys(conspiracies).length);
-  f.store.view.stateVersion++;
-  f.draw();
-  assert.equal(
-    f.announcements.length,
-    Object.keys(conspiracies).length,
-    "an unchanged reveal must not be announced twice",
-  );
-});
-
-test("instant conspiracies remain visible for exactly the minimum reveal", (t) => {
-  const f = fixture(t),
-    controlIds = f.renderer.regions.map((region: any) => region.id);
-  f.store.view.public.recentEffects.push({
-    effectSeq: "1",
-    stateVersion: 2,
-    kind: "conspiracyRevealed",
-    actorPlayerId: "player-0",
-    conspiracy: "PERFIDIA",
-  });
-  f.store.view.stateVersion = 2;
-  f.store.version++;
-  f.draw();
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:PERFIDIA"),
-    true,
-  );
-  assert.deepEqual(
-    f.renderer.regions.map((region: any) => region.id),
-    controlIds,
-    "the visual reveal must not block controls",
-  );
-
-  f.setNow(1499);
-  f.draw();
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:PERFIDIA"),
-    true,
-  );
-  assert.equal(f.announcements.length, 1);
-
-  f.setNow(1500);
-  f.draw();
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:PERFIDIA"),
-    false,
-  );
-  assert.equal(f.images.some((image) => image.kind === "conspiracy"), true);
-  assert.equal(f.texts.some((text) => text.text === "EL BANCO"), true);
-});
-
-test("server-managed conspiracy reveals outlive the minimum duration", (t) => {
-  const f = fixture(t);
-  f.store.view.public.recentEffects.push({
-    effectSeq: "1",
-    stateVersion: 2,
-    kind: "conspiracyRevealed",
-    actorPlayerId: "player-0",
-    conspiracy: "HEREJIA",
-  });
-  f.store.view.public.board.revealedConspiracy = { conspiracy: "HEREJIA" };
-  f.draw();
-  f.setNow(5000);
-  f.draw();
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:HEREJIA"),
-    true,
-  );
-
-  f.store.view.public.board.revealedConspiracy = null;
-  f.draw();
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:HEREJIA"),
-    false,
-  );
-});
-
-test("stale conspiracy history is not replayed on room entry or room change", (t) => {
-  const effect = {
-      effectSeq: "7",
-      stateVersion: 20,
-      kind: "conspiracyRevealed",
-      actorPlayerId: "player-0",
-      conspiracy: "AGONIA",
-    },
-    f = fixture(t, 2, 6, { recentEffects: [effect] });
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:AGONIA"),
-    false,
-  );
-  assert.equal(f.announcements.length, 0);
-
-  f.store.view.public.recentEffects.push({ ...effect, effectSeq: "8" });
-  f.draw();
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:AGONIA"),
-    true,
-  );
-  f.store.view.roomId = "room-2";
-  f.draw();
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:AGONIA"),
-    false,
-  );
-});
-
-test("an active conspiracy is shown immediately after reconnect", (t) => {
-  const f = fixture(t, 2, 6, {
-    recentEffects: [
-      {
-        effectSeq: "4",
-        stateVersion: 9,
-        kind: "conspiracyRevealed",
-        actorPlayerId: "player-0",
-        conspiracy: "APOSTASIA",
-      },
-    ],
-    revealedConspiracy: { conspiracy: "APOSTASIA" },
-  });
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:APOSTASIA"),
-    true,
-  );
-  assert.equal(f.announcements.length, 1);
-  assert.match(f.announcements[0], /Apostasía/);
-});
-
-test("missing conspiracy artwork falls back to readable card content", (t) => {
-  const f = fixture(t);
-  delete f.renderer.cardAssets.conspiracyFronts.INDIGENCIA;
-  f.store.view.public.board.revealedConspiracy = { conspiracy: "INDIGENCIA" };
-  f.draw();
-  assert.equal(
-    f.images.some((image) => image.kind === "conspiracy-front:INDIGENCIA"),
-    false,
-  );
-  assert.equal(f.texts.some((text) => text.text === "INDIGENCIA"), true);
-  assert.equal(
-    f.texts
-      .map((text) => text.text)
-      .join(" ")
-      .includes(conspiracies.INDIGENCIA[1]),
-    true,
-  );
-});
-
-for (const handCount of [2, 3, 4]) {
-  test(`${handCount}-card hand is centered, ratio-correct and matches all controls`, (t) => {
-    const f = fixture(t, handCount);
-    const cards = f.rectangles.filter((r) => r.fill === "#2b2631");
-    const fronts = f.images.filter((image) => image.kind.startsWith("front:"));
-    const regions = f.renderer.regions.filter((r: any) => r.id.startsWith("info:"));
-    assert.equal(cards.length, handCount);
-    assert.equal(fronts.length, handCount);
-    assert.equal(regions.length, handCount);
-    cards.forEach((card, i) => {
-      assert.equal(card.w, 132);
-      assert.equal(card.h, 184.8);
-      ratio(card, 5, 7);
-      assert.deepEqual(bounds(regions[i]), bounds(card));
-      assert(card.x >= 250 && card.x + card.w <= 1210);
-      assert(card.y === 690 && card.y + card.h < 900);
-      assert.equal(fronts[i].kind, `front:${f.store.view.self.hand[i].sin}`);
-      assert.deepEqual(bounds(fronts[i]), bounds(card));
-      if (i) assert.equal(card.x - cards[i - 1].x - card.w, 19);
-    });
-    assert.equal((cards[0].x + cards.at(-1)!.x + 132) / 2, 800);
-    assertControlBounds(f);
-    const first = cards[0];
-    f.renderer.update({ x: first.x + 5, y: first.y + first.h + 1 }, true);
-    assert.equal(f.renderer.modal, null, "old card bottom must not remain clickable");
-    f.renderer.update({ x: first.x + 5, y: first.y + first.h - 1 }, true);
-    assert.deepEqual(f.renderer.modal, { kind: "info", sin: "ORGULLO" });
-  });
-}
-
-test("declaration cards stay centered in their cells with matching disabled masks and controls", (t) => {
-  const f = fixture(t);
-  f.renderer.modal = { kind: "sins" };
-  f.draw();
-  const regions = f.renderer.regions.filter((r: any) => r.id.startsWith("declare:"));
-  const cards = f.rectangles.filter((r) => r.fill === "#2b2631" && r.w === 130);
-  const fronts = f.images.filter(
-    (image) => image.kind.startsWith("front:") && image.w === 130,
-  );
-  const masks = f.fills.filter((r) => r.fill === "#16131bc9");
-  assert.equal(cards.length, 8);
-  assert.deepEqual(
-    fronts.map((image) => image.kind),
-    Object.keys(sins).map((sin) => `front:${sin}`),
-  );
-  assert.equal(regions.length, 8);
-  assert.equal(masks.length, 2);
-  cards.forEach((card, i) => {
-    assert.deepEqual(bounds(card), {
-      x: 448 + (i % 4) * 187,
-      y: 269 + Math.floor(i / 4) * 208,
-      w: 130,
-      h: 182,
-    });
-    ratio(card, 5, 7);
-    assert.equal(card.x + card.w / 2, 430 + (i % 4) * 187 + 166 / 2);
-    assert.deepEqual(bounds(regions[i]), bounds(card));
-    if (i < 2) assert.deepEqual(bounds(masks[i]), bounds(card));
-  });
-  assertControlBounds(f);
-  f.renderer.update({ x: cards[2].x - 1, y: cards[2].y + 30 }, true);
-  assert.equal(f.renderer.modal.kind, "sins", "old card edge must not remain clickable");
-  regions[0].fn();
-  assert.equal(f.renderer.modal.kind, "sins", "unaffordable cards cannot be declared");
-  f.renderer.update({ x: cards[2].x + 10, y: cards[2].y + 30 }, true);
-  assert.equal(f.renderer.modal.kind, "confirmSin");
-  assert.equal(f.renderer.modal.sin, "GULA");
-  f.draw();
-  f.renderer.regions.find((r: any) => r.id === "confirmSin").fn();
-  assert.deepEqual(f.sent, [{
-    type: "game.declareSin",
-    payload: { opportunityId: "opportunity", sin: "GULA" },
-  }]);
-});
-
-test("expanded hand supports ordered selection and confirmation through matching controls", (t) => {
-  const f = fixture(t, 4);
-  f.store.view.self.legalActions = [];
-  f.store.view.self.prompt = {
-    promptId: "prompt",
-    purpose: "envidiaBottomOrder",
-    kind: "selectCards",
-    count: 2,
-    ordered: true,
-    eligibleHandCardRefs: f.store.view.self.hand.map((card: any) => card.handCardRef),
-  };
-  f.store.version++;
-  f.draw();
-  const regions = f.renderer.regions.filter((r: any) => r.id.startsWith("hand:"));
-  const cards = f.rectangles.filter((r) => r.fill === "#2b2631");
-  regions.forEach((region: Bounds, i: number) => assert.deepEqual(bounds(region), bounds(cards[i])));
-  const click = (i: number) => {
-    const r = regions[i];
-    f.renderer.update({ x: r.x + r.w / 2, y: r.y + r.h / 2 }, true);
-    f.draw();
-  };
-  click(2);
-  click(0);
-  click(1);
-  assert.deepEqual(f.renderer.selected, ["card-2", "card-0"]);
-  click(2);
-  click(1);
-  assert.deepEqual(f.renderer.selected, ["card-0", "card-1"]);
-  assert.equal(f.rectangles.filter((r) => r.fill === "#d2b478" && r.w === 27).length, 2);
-  assertControlBounds(f);
-  const confirmIndex = f.renderer.regions.findIndex((r: any) => r.id === "confirm");
-  f.controls.children[confirmIndex].onclick();
-  assert.deepEqual(f.sent, [{
-    type: "game.answerPrompt",
-    payload: {
-      promptId: "prompt",
-      answer: { kind: "selectCards", handCardRefs: ["card-0", "card-1"] },
-    },
-  }]);
+test('sanitized reconnect authority freezes anonymous hand slots with no old reference',()=>{
+  const f=rendererFixture();f.store.connected=false;f.store.view.self.hand=[];f.renderer.update();f.draw();
+  assert.equal(f.renderer.layout.hand.length,2);
+  assert(f.renderer.layout.hand.every(c=>!c.sin&&!c.handCardRef));
+  assert.equal(f.images.filter(i=>i.kind==='back'&&f.renderer.layout.hand.some(c=>c.x===i.x&&c.y===i.y)).length,2);
+  f.store.view=null;f.renderer.update();assert.equal(f.renderer.layout,null);
 });

@@ -1,0 +1,24 @@
+{
+  "profile": "Headless Chrome 152, Apple M2 Pro, 1440\u00d7900 CSS, DPR1, warm real director/renderer, six-seat Herej\u00eda replay and repeated room resets",
+  "durationMs": 60004.10000002384,
+  "canvasMs": {
+    "count": 3599,
+    "p95": 0.8999999761581421,
+    "p99": 1.100000023841858,
+    "max": 6.399999976158142
+  },
+  "updateAndCanvasMs": {
+    "count": 3599,
+    "p95": 1.8000000715255737,
+    "p99": 2.299999952316284,
+    "max": 7.399999976158142
+  },
+  "frameIntervalMs": {
+    "count": 3599,
+    "p95": 17.5,
+    "p99": 17.800000071525574,
+    "max": 19.09999990463257
+  },
+  "longTasks": [],
+  "measuredOn": "2026-09-04"
+}

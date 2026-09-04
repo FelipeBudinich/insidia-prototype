@@ -23,7 +23,9 @@
     />
   </head>
   <body>
+    <div id="boot" role="status"><strong>INSIDIA</strong><span id="boot-status">Preparando la mesa…</span><progress id="boot-progress" max="1" value="0" aria-label="Ilustraciones cargadas"></progress></div>
     <link rel="stylesheet" href="/games/insidia/style.css" />
+    <link rel="stylesheet" href="/games/insidia/premium-interface.css" />
     <div id="stage">
       <canvas
         id="canvas"
@@ -46,7 +48,7 @@
     <div id="orientation">
       Gira tu dispositivo<br /><small>La mesa se disfruta en horizontal.</small>
     </div>
-    <dialog id="rules">
+    <dialog id="rules" aria-label="Cómo jugar a Insidia">
       <div id="rules-content"></div>
       <form method="dialog">
         <button class="primary">Volver al juego</button>

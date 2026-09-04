@@ -17,7 +17,10 @@
     "start": "node dist/server/index.js",
     "migrate": "node dist/server/persistence/migrate.js",
     "test": "node --import tsx --test test/*.test.ts && npm run test:upstream",
-    "test:upstream": "node --test vendor/theseus/test/esm-engine-runtime.test.mjs vendor/theseus/test/font-runtime.test.mjs vendor/theseus/test/gamepad-plugin.test.mjs vendor/theseus/test/input-bindings.test.mjs vendor/theseus/test/ig-debug.test.mjs"
+    "test:upstream": "node --test vendor/theseus/test/esm-engine-runtime.test.mjs vendor/theseus/test/font-runtime.test.mjs vendor/theseus/test/gamepad-plugin.test.mjs vendor/theseus/test/input-bindings.test.mjs vendor/theseus/test/ig-debug.test.mjs",
+    "dev:ux": "node tools/ux/serve.mjs",
+    "test:ux": "node test/premium-interface.browser.mjs",
+    "generate:ux-fixtures": "node --import tsx tools/ux/generate-fixtures.ts"
   },
   "dependencies": {
     "express": "^5.2.1",

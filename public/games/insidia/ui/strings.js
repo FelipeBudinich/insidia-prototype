@@ -93,6 +93,9 @@ export const conspiracies = {
   ],
 };
 export const errors = {
+  ACTION_NOT_ALLOWED: "Esta acción ya no está disponible.",
+  INVALID_TARGET: "Elige un jugador disponible.",
+  DECISION_EXPIRED: "Resolviendo… El tiempo para esta decisión terminó.",
   STALE_STATE: "La mesa ha cambiado. Elige de nuevo.",
   NOT_READY: "Todos los jugadores deben estar listos.",
   NOT_HOST: "Solo el anfitrión puede hacer eso.",
@@ -143,7 +146,11 @@ export function effectText(e, players) {
     case "claimProven":
       return `${a} demuestra ${sins[e.sin].name}.`;
     case "sinExposed":
-      return `${a} revela ${sins[e.sin].name}.`;
+      return e.reason === "bluffExposed"
+        ? `${a} revela ${sins[e.sin].name}. Declaración falsa · efecto cancelado, sin coste base.`
+        : e.reason === "incorrectChallenge"
+          ? `${a} revela ${sins[e.sin].name} como penalización por el desafío incorrecto.`
+          : `${a} revela ${sins[e.sin].name}.`;
     case "soulsGained":
       return `${a} toma ${e.amount} almas.`;
     case "soulsPaid":
