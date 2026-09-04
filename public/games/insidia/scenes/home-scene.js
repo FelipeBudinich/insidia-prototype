@@ -1,4 +1,12 @@
 import { sins, conspiracies } from "../ui/strings.js";
+import { assets } from "../media/assets.js";
+import { drawImageAsset } from "../ui/card-art.js";
+
+const HOME_PREVIEWS = [
+  ["RABIA", "II"],
+  ["ORGULLO", "I"],
+  ["VANIDAD", "VI"],
+];
 export const escape = (s) =>
   String(s).replace(
     /[&<>"']/g,
@@ -33,8 +41,9 @@ export class HomeScene {
     }
     shell.innerHTML =
       this.header() +
-      `<section class="home-grid"><div class="home-intro"><div class="eyebrow">Un pacto. Ocho pecados. Una victoria.</div><h1>INSIDIA</h1><div class="lead">Ningún alma es inocente.</div><p>Oculta tus pecados. Acumula almas.<br>Haz que todos crean tu mentira…<br>o atrévete a desenmascarar la suya.</p><div class="card-fan" aria-hidden="true">${["RABIA", "ORGULLO", "VANIDAD"].map((s, i) => `<div class="preview-card"><div class="line"></div><div class="roman">${["II", "I", "VI"][i]}</div><div class="glyph">${sins[s].symbol}</div><div class="title">${sins[s].name.toUpperCase()}</div></div>`).join("")}</div><div class="home-stats"><span>3—6 jugadores</span><span>Humanos + bots</span><span>Una mesa, en tiempo real</span></div></div><section class="panel"><div class="panel-top"><h3>Tu lugar en la mesa</h3><small>INVITADO</small></div><div class="field"><label for="display-name">¿Cómo te llaman?</label><input id="display-name" name="displayName" autocomplete="nickname" maxlength="24" placeholder="Tu nombre" value="${escape(this.name)}"></div><div class="tabs"><button data-tab="create" class="${this.tab === "create" ? "active" : ""}">Crear una sala</button><button data-tab="join" class="${this.tab === "join" ? "active" : ""}">Tengo un código</button></div>${this.tab === "create" ? `<form id="create-form"><div class="field"><label for="visibility">La invitación</label><select id="visibility"><option value="private" ${this.visibility === "private" ? "selected" : ""}>Privada · Solo con código</option><option value="public" ${this.visibility === "public" ? "selected" : ""}>Pública · Abierta a todos</option></select></div><div class="form-grid"><div><label for="humans">Amigos, además de ti</label><select id="humans">${this.options(this.humans)}</select></div><div><label for="bots">Oponentes bot</label><select id="bots">${this.options(this.bots)}</select></div></div><div class="total"><span>Tú + tus invitados</span><strong id="total">${1 + this.humans + this.bots} jugadores</strong></div><button class="primary full" type="submit" ${this.disabled()}>Crear la mesa <span style="float:right">→</span></button><p class="form-help">Juega ahora con bots o invita a tus cómplices.</p></form>` : `<form id="join-form"><label for="private-code">El código de seis dígitos</label><input id="private-code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" value="${escape(this.code)}" style="font-size:30px;letter-spacing:.25em;text-align:center;margin:8px 0 25px"><button class="primary full" ${this.disabled()}>Entrar a la mesa →</button><p class="form-help">Pídele el código al anfitrión.</p></form>`}<button data-browse class="quiet full" style="margin-top:21px;border-top:1px solid var(--line);padding-top:21px">Explorar salas públicas ↗</button></section></section>` +
+      `<section class="home-grid"><div class="home-intro"><div class="eyebrow">Un pacto. Ocho pecados. Una victoria.</div><h1>INSIDIA</h1><div class="lead">Ningún alma es inocente.</div><p>Oculta tus pecados. Acumula almas.<br>Haz que todos crean tu mentira…<br>o atrévete a desenmascarar la suya.</p><div class="card-fan" aria-hidden="true">${HOME_PREVIEWS.map(([sin, numeral]) => `<div class="preview-card" data-preview-sin="${sin}"><canvas width="296" height="436"></canvas><div class="line"></div><div class="roman">${numeral}</div><div class="glyph">${sins[sin].symbol}</div><div class="title">${sins[sin].name.toUpperCase()}</div></div>`).join("")}</div><div class="home-stats"><span>3—6 jugadores</span><span>Humanos + bots</span><span>Una mesa, en tiempo real</span></div></div><section class="panel"><div class="panel-top"><h3>Tu lugar en la mesa</h3><small>INVITADO</small></div><div class="field"><label for="display-name">¿Cómo te llaman?</label><input id="display-name" name="displayName" autocomplete="nickname" maxlength="24" placeholder="Tu nombre" value="${escape(this.name)}"></div><div class="tabs"><button data-tab="create" class="${this.tab === "create" ? "active" : ""}">Crear una sala</button><button data-tab="join" class="${this.tab === "join" ? "active" : ""}">Tengo un código</button></div>${this.tab === "create" ? `<form id="create-form"><div class="field"><label for="visibility">La invitación</label><select id="visibility"><option value="private" ${this.visibility === "private" ? "selected" : ""}>Privada · Solo con código</option><option value="public" ${this.visibility === "public" ? "selected" : ""}>Pública · Abierta a todos</option></select></div><div class="form-grid"><div><label for="humans">Amigos, además de ti</label><select id="humans">${this.options(this.humans)}</select></div><div><label for="bots">Oponentes bot</label><select id="bots">${this.options(this.bots)}</select></div></div><div class="total"><span>Tú + tus invitados</span><strong id="total">${1 + this.humans + this.bots} jugadores</strong></div><button class="primary full" type="submit" ${this.disabled()}>Crear la mesa <span style="float:right">→</span></button><p class="form-help">Juega ahora con bots o invita a tus cómplices.</p></form>` : `<form id="join-form"><label for="private-code">El código de seis dígitos</label><input id="private-code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" value="${escape(this.code)}" style="font-size:30px;letter-spacing:.25em;text-align:center;margin:8px 0 25px"><button class="primary full" ${this.disabled()}>Entrar a la mesa →</button><p class="form-help">Pídele el código al anfitrión.</p></form>`}<button data-browse class="quiet full" style="margin-top:21px;border-top:1px solid var(--line);padding-top:21px">Explorar salas públicas ↗</button></section></section>` +
       this.footer();
+    this.drawPreviews(shell);
     this.bindCommon(shell);
     shell.querySelector("#display-name").oninput = (e) => {
       this.name = e.target.value;
@@ -82,6 +91,22 @@ export class HomeScene {
           });
       };
     }
+  }
+  drawPreviews(root) {
+    root.querySelectorAll("[data-preview-sin]").forEach((card) => {
+      const canvas = card.querySelector("canvas"),
+        ctx = canvas.getContext("2d");
+      drawImageAsset(
+        ctx,
+        assets.pecadoFronts[card.dataset.previewSin],
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+        16,
+        "cover",
+      );
+    });
   }
   disabled() {
     return !this.store.connected || this.store.pending.size ? "disabled" : "";

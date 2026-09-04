@@ -1,5 +1,6 @@
 import { sins, conspiracies, purposes, effectText } from "./strings.js";
 import { assets } from "../media/assets.js";
+import { drawImageAsset } from "./card-art.js";
 const CARD_RATIOS = {
   sin: { width: 5, height: 7 },
   conspiracy: { width: 7, height: 5 },
@@ -19,11 +20,11 @@ const P = {
   red: "#ce837b",
 };
 export class BoardRenderer {
-  constructor(store, dispatch, home, cardBackAssets = assets) {
+  constructor(store, dispatch, home, cardAssets = assets) {
     this.store = store;
     this.dispatch = dispatch;
     this.home = home;
-    this.cardBackAssets = cardBackAssets;
+    this.cardAssets = cardAssets;
     this.regions = [];
     this.selected = [];
     this.modal = null;
@@ -45,27 +46,24 @@ export class BoardRenderer {
       c.stroke();
     }
   }
-  cardBack(image, x, y, w, h, r) {
-    if (!image?.loaded || !image.data) return false;
-    const source = image.getSourceRect(0, 0, image.width, image.height),
-      c = this.ctx;
+  artworkShade(x, y, w, h, r) {
+    const c = this.ctx,
+      top = c.createLinearGradient(x, y, x, y + h * 0.34),
+      bottom = c.createLinearGradient(x, y + h * 0.42, x, y + h);
+    top.addColorStop(0, "#080609e6");
+    top.addColorStop(1, "#08060900");
+    bottom.addColorStop(0, "#08060900");
+    bottom.addColorStop(0.48, "#080609b8");
+    bottom.addColorStop(1, "#080609f5");
     c.save();
     c.beginPath();
     c.roundRect(x, y, w, h, r);
     c.clip();
-    c.drawImage(
-      image.data,
-      source.x,
-      source.y,
-      source.width,
-      source.height,
-      x,
-      y,
-      w,
-      h,
-    );
+    c.fillStyle = top;
+    c.fillRect(x, y, w, h * 0.34);
+    c.fillStyle = bottom;
+    c.fillRect(x, y + h * 0.42, w, h * 0.58);
     c.restore();
-    return true;
   }
   text(t, x, y, size = 16, color = P.ink, align = "left", serif = false) {
     const c = this.ctx;
@@ -150,7 +148,7 @@ export class BoardRenderer {
     );
     if (back) {
       if (
-        !this.cardBack(this.cardBackAssets.pecadoBack, x, y, w, h, 7)
+        !drawImageAsset(this.ctx, this.cardAssets.pecadoBack, x, y, w, h, 7)
       ) {
         c.strokeStyle = "#65553d";
         c.lineWidth = 1;
@@ -166,6 +164,67 @@ export class BoardRenderer {
         }
         this.text("I", x + w / 2, y + h / 2, w * 0.34, P.gold, "center", true);
       }
+    } else if (
+      drawImageAsset(
+        this.ctx,
+        this.cardAssets.pecadoFronts?.[sin],
+        x,
+        y,
+        w,
+        h,
+        7,
+      )
+    ) {
+      this.artworkShade(x, y, w, h, 7);
+      this.text(
+        Object.keys(sins).indexOf(sin) + 1,
+        x + 12,
+        y + 15,
+        small ? 8 : 10,
+        color,
+      );
+      this.text(
+        s.cost + " ◇",
+        x + w - 12,
+        y + 15,
+        small ? 9 : 11,
+        color,
+        "right",
+      );
+      this.text(
+        s.symbol,
+        x + w / 2,
+        y + h * 0.64,
+        w * 0.2,
+        color,
+        "center",
+        true,
+      );
+      this.text(
+        s.name.toUpperCase(),
+        x + w / 2,
+        y + h * 0.76,
+        small ? 13 : 17,
+        color,
+        "center",
+        true,
+      );
+      this.text(
+        s.motto,
+        x + w / 2,
+        y + h * 0.86,
+        small ? 7 : 9,
+        P.ink,
+        "center",
+      );
+      this.text(
+        exposed ? "EXPUESTO" : "PECADO",
+        x + w / 2,
+        y + h * 0.95,
+        small ? 6 : 8,
+        color,
+        "center",
+      );
     } else {
       this.text(
         Object.keys(sins).indexOf(sin) + 1,
@@ -212,6 +271,7 @@ export class BoardRenderer {
         );
       }
     }
+    this.rect(x, y, w, h, null, selected ? P.gold : color, 7);
     if (selected) {
       this.rect(x + w - 31, y - 10, 27, 27, P.gold, null, 14);
       this.text(order ?? "✓", x + w - 17, y + 4, 14, "#211c17", "center");
@@ -224,7 +284,15 @@ export class BoardRenderer {
       { h } = bounds;
     this.rect(x, y, w, h, "#29212d", "#74566c", 6);
     if (
-      !this.cardBack(this.cardBackAssets.conspiracyBack, x, y, w, h, 6)
+      !drawImageAsset(
+        this.ctx,
+        this.cardAssets.conspiracyBack,
+        x,
+        y,
+        w,
+        h,
+        6,
+      )
     ) {
       this.rect(x + 7, y + 7, w - 14, h - 14, null, "#594254", 3);
       this.text("✧", x + w / 2, y + h * 0.4, 50, "#ba96b5", "center", true);
@@ -284,8 +352,9 @@ export class BoardRenderer {
     for (let i = 0; i < p.handCount; i++) {
       const cardX = x + 12 + i * 18;
       if (
-        !this.cardBack(
-          this.cardBackAssets.pecadoBack,
+        !drawImageAsset(
+          this.ctx,
+          this.cardAssets.pecadoBack,
           cardX,
           y + 12,
           mini.w,

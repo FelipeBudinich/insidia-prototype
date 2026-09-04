@@ -243,8 +243,29 @@ header {
   box-shadow: 0 8px 35px #0005;
   text-align: center;
   position: relative;
-  padding: 16px;
+  padding: 0;
   flex: none;
+  overflow: hidden;
+}
+.preview-card canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.preview-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    180deg,
+    #080609b8 0%,
+    #08060900 46%,
+    #080609e8 100%
+  );
+  pointer-events: none;
 }
 .preview-card:first-child {
   transform: rotate(-12deg);
@@ -263,15 +284,27 @@ header {
   color: #bc91b8;
 }
 .preview-card .roman {
+  position: absolute;
+  top: 13px;
+  left: 0;
+  right: 0;
+  z-index: 2;
   font: 10px Georgia;
   letter-spacing: 3px;
 }
 .preview-card .glyph {
-  font: 70px Georgia;
-  margin-top: 13px;
-  height: 104px;
+  position: absolute;
+  right: 13px;
+  bottom: 37px;
+  z-index: 2;
+  font: 30px Georgia;
 }
 .preview-card .title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  z-index: 2;
   font: 17px Georgia;
   letter-spacing: 0.1em;
 }
@@ -281,6 +314,7 @@ header {
   border: 1px solid #63534466;
   border-radius: 4px;
   pointer-events: none;
+  z-index: 3;
 }
 .home-stats {
   display: flex;
@@ -668,8 +702,7 @@ body.match #stage {
     height: 190px;
   }
   .preview-card .glyph {
-    font-size: 61px;
-    height: 88px;
+    font-size: 27px;
   }
   .home-stats {
     justify-content: center;

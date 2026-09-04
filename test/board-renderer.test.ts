@@ -5,7 +5,7 @@ import { sins } from "../public/games/insidia/ui/strings.js";
 
 type Bounds = { x: number; y: number; w: number; h: number };
 type Rectangle = Bounds & { fill?: string };
-type DrawnImage = Bounds & { kind: "pecado" | "conspiracy" };
+type DrawnImage = Bounds & { kind: string };
 
 function fixture(t: TestContext, handCount = 2, playerCount = 6) {
   const rectangles: Rectangle[] = [],
@@ -32,6 +32,7 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     arc() {},
     ellipse() {},
     createRadialGradient() { return { addColorStop() {} }; },
+    createLinearGradient() { return { addColorStop() {} }; },
     fillRect(x: number, y: number, w: number, h: number) {
       fills.push({ x, y, w, h, fill: this.fillStyle });
     },
@@ -39,7 +40,7 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
       texts.push({ text, x, y });
     },
     drawImage(
-      data: { kind: DrawnImage["kind"] },
+      data: { kind: string },
       _sourceX: number,
       _sourceY: number,
       _sourceWidth: number,
@@ -120,13 +121,16 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     },
   };
   const store = { view, version: 1, pending: new Set(), now: () => 0 };
-  const image = (kind: DrawnImage["kind"], width: number, height: number) => ({
+  const image = (kind: string, width: number, height: number) => ({
     loaded: true,
     data: { kind },
     width,
     height,
     getSourceRect() { return { x: 0, y: 0, width, height }; },
   });
+  const pecadoFronts = Object.fromEntries(
+    Object.keys(sins).map((sin) => [sin, image(`front:${sin}`, 732, 1024)]),
+  );
   const renderer = new BoardRenderer(
     store,
     { send(type: string, payload: any) { sent.push({ type, payload }); } },
@@ -134,6 +138,7 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     {
       pecadoBack: image("pecado", 732, 1024),
       conspiracyBack: image("conspiracy", 1024, 732),
+      pecadoFronts,
     },
   );
   const draw = () => {
@@ -213,8 +218,10 @@ for (const handCount of [2, 3, 4]) {
   test(`${handCount}-card hand is centered, ratio-correct and matches all controls`, (t) => {
     const f = fixture(t, handCount);
     const cards = f.rectangles.filter((r) => r.fill === "#2b2631");
+    const fronts = f.images.filter((image) => image.kind.startsWith("front:"));
     const regions = f.renderer.regions.filter((r: any) => r.id.startsWith("info:"));
     assert.equal(cards.length, handCount);
+    assert.equal(fronts.length, handCount);
     assert.equal(regions.length, handCount);
     cards.forEach((card, i) => {
       assert.equal(card.w, 132);
@@ -223,6 +230,8 @@ for (const handCount of [2, 3, 4]) {
       assert.deepEqual(bounds(regions[i]), bounds(card));
       assert(card.x >= 250 && card.x + card.w <= 1210);
       assert(card.y === 690 && card.y + card.h < 900);
+      assert.equal(fronts[i].kind, `front:${f.store.view.self.hand[i].sin}`);
+      assert.deepEqual(bounds(fronts[i]), bounds(card));
       if (i) assert.equal(card.x - cards[i - 1].x - card.w, 19);
     });
     assert.equal((cards[0].x + cards.at(-1)!.x + 132) / 2, 800);
@@ -241,8 +250,15 @@ test("declaration cards stay centered in their cells with matching disabled mask
   f.draw();
   const regions = f.renderer.regions.filter((r: any) => r.id.startsWith("declare:"));
   const cards = f.rectangles.filter((r) => r.fill === "#2b2631" && r.w === 130);
+  const fronts = f.images.filter(
+    (image) => image.kind.startsWith("front:") && image.w === 130,
+  );
   const masks = f.fills.filter((r) => r.fill === "#16131bc9");
   assert.equal(cards.length, 8);
+  assert.deepEqual(
+    fronts.map((image) => image.kind),
+    Object.keys(sins).map((sin) => `front:${sin}`),
+  );
   assert.equal(regions.length, 8);
   assert.equal(masks.length, 2);
   cards.forEach((card, i) => {
