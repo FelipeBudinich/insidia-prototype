@@ -6,6 +6,14 @@ const image = (path) => new ig.Image(`games/insidia/media/${path}`);
 export const assets = Object.freeze({
   pecadoBack: image("pecados-retiro.webp"),
   conspiracyBack: image("conspiraciones-retiro.webp"),
+  conspiracyFronts: Object.freeze({
+    SUPREMACIA: image("conspiraciones/supremacia.webp"),
+    AGONIA: image("conspiraciones/agonia.webp"),
+    INDIGENCIA: image("conspiraciones/indigencia.webp"),
+    HEREJIA: image("conspiraciones/herejia.webp"),
+    PERFIDIA: image("conspiraciones/perfidia.webp"),
+    APOSTASIA: image("conspiraciones/apostasia.webp"),
+  }),
   pecadoFronts: Object.freeze({
     ORGULLO: image("pecados/orgullo.webp"),
     RABIA: image("pecados/ira.webp"),

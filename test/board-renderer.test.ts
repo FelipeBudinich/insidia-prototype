@@ -1,7 +1,12 @@
 import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { BoardRenderer } from "../public/games/insidia/ui/board-renderer.js";
-import { sins } from "../public/games/insidia/ui/strings.js";
+import {
+  conspiracies,
+  sins,
+} from "../public/games/insidia/ui/strings.js";
 import {
   DESIGN_HEIGHT,
   DESIGN_WIDTH,
@@ -10,13 +15,25 @@ import {
 type Bounds = { x: number; y: number; w: number; h: number };
 type Rectangle = Bounds & { fill?: string };
 type DrawnImage = Bounds & { kind: string };
+type FixtureOptions = {
+  recentEffects?: any[];
+  revealedConspiracy?: { conspiracy: string } | null;
+  roomId?: string;
+};
 
-function fixture(t: TestContext, handCount = 2, playerCount = 6) {
+function fixture(
+  t: TestContext,
+  handCount = 2,
+  playerCount = 6,
+  options: FixtureOptions = {},
+) {
   const rectangles: Rectangle[] = [],
     fills: Rectangle[] = [],
     images: DrawnImage[] = [],
     texts: { text: string; x: number; y: number }[] = [],
-    sent: { type: string; payload: any }[] = [];
+    sent: { type: string; payload: any }[] = [],
+    announcements: string[] = [];
+  let now = 0;
   let path: Rectangle | undefined;
   const ctx = {
     fillStyle: "",
@@ -63,10 +80,19 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     replaceChildren() { this.children = []; },
     append(child: any) { this.children.push(child); },
   };
+  const announcer = {
+    value: "",
+    get textContent() { return this.value; },
+    set textContent(value: string) {
+      this.value = value;
+      if (value) announcements.push(value);
+    },
+  };
   const elements = {
     canvas: { style: { cursor: "" } },
     rules: { open: false },
     "game-controls": controls,
+    "game-announcer": announcer,
   };
   const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
   Object.defineProperty(globalThis, "document", {
@@ -97,6 +123,8 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     faceUpSins: i === 1 ? [{ sin: "RABIA" }] : [],
   }));
   const view: any = {
+    roomId: options.roomId ?? "room-1",
+    stateVersion: 1,
     public: {
       room: { status: "active", visibility: "private" },
       players,
@@ -105,10 +133,10 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
         sinDeckCount: 20,
         conspiracyDeckCount: 5,
         publicCenter: [],
-        revealedConspiracy: { conspiracy: "HEREJIA" },
+        revealedConspiracy: options.revealedConspiracy ?? null,
       },
       turn: { turnNumber: 1, phase: "action", activePlayerId: "player-0" },
-      recentEffects: [],
+      recentEffects: options.recentEffects ?? [],
     },
     self: {
       playerId: "player-0",
@@ -124,7 +152,7 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
       ],
     },
   };
-  const store = { view, version: 1, pending: new Set(), now: () => 0 };
+  const store = { view, version: 1, pending: new Set(), now: () => now };
   const image = (kind: string, width: number, height: number) => ({
     loaded: true,
     data: { kind },
@@ -133,8 +161,14 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     getSourceRect() { return { x: 0, y: 0, width, height }; },
   });
   const pecadoFronts = Object.fromEntries(
-    Object.keys(sins).map((sin) => [sin, image(`front:${sin}`, 732, 1024)]),
-  );
+      Object.keys(sins).map((sin) => [sin, image(`front:${sin}`, 732, 1024)]),
+    ),
+    conspiracyFronts = Object.fromEntries(
+      Object.keys(conspiracies).map((conspiracy) => [
+        conspiracy,
+        image(`conspiracy-front:${conspiracy}`, 1024, 732),
+      ]),
+    );
   const renderer = new BoardRenderer(
     store,
     { send(type: string, payload: any) { sent.push({ type, payload }); } },
@@ -142,6 +176,7 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     {
       pecadoBack: image("pecado", 732, 1024),
       conspiracyBack: image("conspiracy", 1024, 732),
+      conspiracyFronts,
       pecadoFronts,
     },
   );
@@ -158,8 +193,10 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     images,
     texts,
     controls,
+    announcements,
     sent,
     draw,
+    setNow(value: number) { now = value; },
   };
 }
 
@@ -211,11 +248,207 @@ test("deck and opponent cards use the supplied backs at their exact ratios", (t)
     assert.equal(mini.h, 21);
     ratio(mini, 5, 7);
   }
-  assert.deepEqual(bounds(f.rectangles.find((r) => r.fill === "#322437")!),
-    { x: 638, y: 474, w: 324, h: 41 });
+  assert.equal(
+    f.rectangles.some((r) => r.fill === "#322437"),
+    false,
+    "the retired conspiracy nameplate must not be drawn",
+  );
   const exposedLabel = f.rectangles.find((r) => r.fill === "#37262b")!;
   assert.equal(exposedLabel.w, 80);
   assert.equal(exposedLabel.h, 24);
+});
+
+test("all illustrated conspiracy fronts have the expected runtime dimensions", async () => {
+  await Promise.all(
+    Object.keys(conspiracies).map(async (conspiracy) => {
+      const path = fileURLToPath(
+        new URL(
+          `../public/games/insidia/media/conspiraciones/${conspiracy.toLowerCase()}.webp`,
+          import.meta.url,
+        ),
+      );
+      const metadata = await sharp(path).metadata();
+      assert.equal(metadata.width, 1024, conspiracy);
+      assert.equal(metadata.height, 732, conspiracy);
+    }),
+  );
+});
+
+test("active conspiracies replace the center widgets with illustrated fronts", (t) => {
+  const f = fixture(t),
+    controlIds = f.renderer.regions.map((region: any) => region.id);
+  for (const [conspiracy, [name, description]] of Object.entries(conspiracies)) {
+    f.store.view.public.board.revealedConspiracy = { conspiracy };
+    f.store.view.stateVersion++;
+    f.store.version++;
+    f.draw();
+
+    const front = f.images.find(
+      (image) => image.kind === `conspiracy-front:${conspiracy}`,
+    )!;
+    assert.deepEqual(bounds(front), {
+      x: 600,
+      y: 255,
+      w: 400,
+      h: 2000 / 7,
+    });
+    ratio(front, 7, 5);
+    assert.equal(f.images.some((image) => image.kind === "conspiracy"), false);
+    assert.equal(f.texts.some((text) => text.text === "EL BANCO"), false);
+    assert.equal(f.texts.some((text) => text.text === name.toUpperCase()), true);
+    assert.equal(
+      f.texts.map((text) => text.text).join(" ").includes(description),
+      true,
+    );
+    assert.deepEqual(
+      f.renderer.regions.map((region: any) => region.id),
+      controlIds,
+    );
+  }
+  assert.equal(f.announcements.length, Object.keys(conspiracies).length);
+  f.store.view.stateVersion++;
+  f.draw();
+  assert.equal(
+    f.announcements.length,
+    Object.keys(conspiracies).length,
+    "an unchanged reveal must not be announced twice",
+  );
+});
+
+test("instant conspiracies remain visible for exactly the minimum reveal", (t) => {
+  const f = fixture(t),
+    controlIds = f.renderer.regions.map((region: any) => region.id);
+  f.store.view.public.recentEffects.push({
+    effectSeq: "1",
+    stateVersion: 2,
+    kind: "conspiracyRevealed",
+    actorPlayerId: "player-0",
+    conspiracy: "PERFIDIA",
+  });
+  f.store.view.stateVersion = 2;
+  f.store.version++;
+  f.draw();
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:PERFIDIA"),
+    true,
+  );
+  assert.deepEqual(
+    f.renderer.regions.map((region: any) => region.id),
+    controlIds,
+    "the visual reveal must not block controls",
+  );
+
+  f.setNow(1499);
+  f.draw();
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:PERFIDIA"),
+    true,
+  );
+  assert.equal(f.announcements.length, 1);
+
+  f.setNow(1500);
+  f.draw();
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:PERFIDIA"),
+    false,
+  );
+  assert.equal(f.images.some((image) => image.kind === "conspiracy"), true);
+  assert.equal(f.texts.some((text) => text.text === "EL BANCO"), true);
+});
+
+test("server-managed conspiracy reveals outlive the minimum duration", (t) => {
+  const f = fixture(t);
+  f.store.view.public.recentEffects.push({
+    effectSeq: "1",
+    stateVersion: 2,
+    kind: "conspiracyRevealed",
+    actorPlayerId: "player-0",
+    conspiracy: "HEREJIA",
+  });
+  f.store.view.public.board.revealedConspiracy = { conspiracy: "HEREJIA" };
+  f.draw();
+  f.setNow(5000);
+  f.draw();
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:HEREJIA"),
+    true,
+  );
+
+  f.store.view.public.board.revealedConspiracy = null;
+  f.draw();
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:HEREJIA"),
+    false,
+  );
+});
+
+test("stale conspiracy history is not replayed on room entry or room change", (t) => {
+  const effect = {
+      effectSeq: "7",
+      stateVersion: 20,
+      kind: "conspiracyRevealed",
+      actorPlayerId: "player-0",
+      conspiracy: "AGONIA",
+    },
+    f = fixture(t, 2, 6, { recentEffects: [effect] });
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:AGONIA"),
+    false,
+  );
+  assert.equal(f.announcements.length, 0);
+
+  f.store.view.public.recentEffects.push({ ...effect, effectSeq: "8" });
+  f.draw();
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:AGONIA"),
+    true,
+  );
+  f.store.view.roomId = "room-2";
+  f.draw();
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:AGONIA"),
+    false,
+  );
+});
+
+test("an active conspiracy is shown immediately after reconnect", (t) => {
+  const f = fixture(t, 2, 6, {
+    recentEffects: [
+      {
+        effectSeq: "4",
+        stateVersion: 9,
+        kind: "conspiracyRevealed",
+        actorPlayerId: "player-0",
+        conspiracy: "APOSTASIA",
+      },
+    ],
+    revealedConspiracy: { conspiracy: "APOSTASIA" },
+  });
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:APOSTASIA"),
+    true,
+  );
+  assert.equal(f.announcements.length, 1);
+  assert.match(f.announcements[0], /Apostasía/);
+});
+
+test("missing conspiracy artwork falls back to readable card content", (t) => {
+  const f = fixture(t);
+  delete f.renderer.cardAssets.conspiracyFronts.INDIGENCIA;
+  f.store.view.public.board.revealedConspiracy = { conspiracy: "INDIGENCIA" };
+  f.draw();
+  assert.equal(
+    f.images.some((image) => image.kind === "conspiracy-front:INDIGENCIA"),
+    false,
+  );
+  assert.equal(f.texts.some((text) => text.text === "INDIGENCIA"), true);
+  assert.equal(
+    f.texts
+      .map((text) => text.text)
+      .join(" ")
+      .includes(conspiracies.INDIGENCIA[1]),
+    true,
+  );
 });
 
 for (const handCount of [2, 3, 4]) {

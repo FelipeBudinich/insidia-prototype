@@ -6,6 +6,8 @@ const CARD_RATIOS = {
   sin: { width: 5, height: 7 },
   conspiracy: { width: 7, height: 5 },
 };
+const CONSPIRACY_REVEAL_MS = 1500;
+const REVEALED_CONSPIRACY = { x: 600, y: 255, w: 400 };
 function cardBounds(kind, x, y, w) {
   const ratio = CARD_RATIOS[kind];
   return { x, y, w, h: (w * ratio.height) / ratio.width };
@@ -32,6 +34,10 @@ export class BoardRenderer {
     this.hover = null;
     this.signature = "";
     this.lastOpportunity = null;
+    this.revealRoomId = null;
+    this.lastConspiracyEffectSeq = null;
+    this.transientConspiracy = null;
+    this.announcedConspiracyKey = null;
   }
   rect(x, y, w, h, fill, stroke, r = 8) {
     const c = this.ctx;
@@ -280,11 +286,56 @@ export class BoardRenderer {
     c.restore();
     return bounds;
   }
-  conspiracyCard(x, y, w) {
+  conspiracyCard(x, y, w, conspiracy = null) {
     const bounds = cardBounds("conspiracy", x, y, w),
       { h } = bounds;
     this.rect(x, y, w, h, "#29212d", "#74566c", 6);
-    if (
+    if (conspiracy) {
+      const [name, description] = conspiracies[conspiracy],
+        hasArtwork = drawImageAsset(
+          this.ctx,
+          this.cardAssets.conspiracyFronts?.[conspiracy],
+          x,
+          y,
+          w,
+          h,
+          6,
+          "cover",
+        );
+      if (hasArtwork) this.artworkShade(x, y, w, h, 6);
+      else {
+        this.rect(x + 8, y + 8, w - 16, h - 16, null, "#594254", 3);
+        this.text("✧", x + w / 2, y + h * 0.39, 70, "#ba96b5", "center", true);
+      }
+      this.text(
+        "CONSPIRACIÓN REVELADA",
+        x + w / 2,
+        y + 21,
+        10,
+        P.gold,
+        "center",
+      );
+      this.text(
+        name.toUpperCase(),
+        x + w / 2,
+        y + h * 0.72,
+        25,
+        P.ink,
+        "center",
+        true,
+      );
+      this.wrap(
+        description,
+        x + w / 2,
+        y + h * 0.82,
+        w - 48,
+        11,
+        P.ink,
+        16,
+        "center",
+      );
+      this.rect(x, y, w, h, null, P.gold, 6);
+    } else if (
       !drawImageAsset(
         this.ctx,
         this.cardAssets.conspiracyBack,
@@ -307,6 +358,61 @@ export class BoardRenderer {
       );
     }
     return bounds;
+  }
+  currentConspiracy(v) {
+    const effects = v.public.recentEffects ?? [],
+      latest = [...effects]
+        .reverse()
+        .find((effect) => effect.kind === "conspiracyRevealed"),
+      roomChanged = this.revealRoomId !== v.roomId;
+    if (roomChanged) {
+      this.revealRoomId = v.roomId;
+      this.lastConspiracyEffectSeq = latest?.effectSeq ?? null;
+      this.transientConspiracy = null;
+      this.announcedConspiracyKey = null;
+      const announcer = document.getElementById("game-announcer");
+      if (announcer?.textContent) announcer.textContent = "";
+    } else if (
+      latest &&
+      latest.effectSeq !== this.lastConspiracyEffectSeq
+    ) {
+      this.lastConspiracyEffectSeq = latest.effectSeq;
+      this.transientConspiracy = {
+        conspiracy: latest.conspiracy,
+        effectSeq: latest.effectSeq,
+        expiresAt: this.store.now() + CONSPIRACY_REVEAL_MS,
+      };
+    }
+
+    const active = v.public.board.revealedConspiracy?.conspiracy;
+    if (active) {
+      const matchingEffect = latest?.conspiracy === active ? latest : null;
+      return {
+        conspiracy: active,
+        key: matchingEffect?.effectSeq ?? `active:${active}`,
+      };
+    }
+    if (
+      this.transientConspiracy &&
+      this.store.now() < this.transientConspiracy.expiresAt
+    ) {
+      return {
+        conspiracy: this.transientConspiracy.conspiracy,
+        key: this.transientConspiracy.effectSeq,
+      };
+    }
+    this.transientConspiracy = null;
+    return null;
+  }
+  announceConspiracy(reveal) {
+    if (!reveal) return;
+    const key = `${this.revealRoomId}:${reveal.key}`;
+    if (key === this.announcedConspiracyKey) return;
+    this.announcedConspiracyKey = key;
+    const announcer = document.getElementById("game-announcer"),
+      [name, description] = conspiracies[reveal.conspiracy];
+    if (announcer)
+      announcer.textContent = `Conspiración revelada: ${name}. ${description}`;
   }
   player(p, x, y, isActive, isResponder) {
     const w = 210,
@@ -451,24 +557,37 @@ export class BoardRenderer {
         p.playerId === pub.interaction?.currentResponderId,
       );
     }
-    this.text("EL BANCO", 800, 265, 10, P.muted, "center");
-    this.text(board.soulBank + "", 800, 308, 47, P.gold, "center", true);
-    this.text("ALMAS", 800, 342, 9, P.gold, "center");
-    this.card(null, 633, 286, 100, { back: true });
-    this.text(board.sinDeckCount + " PECADOS", 683, 443, 9, P.muted, "center");
-    this.conspiracyCard(847, 306, 140);
-    this.text(
-      board.conspiracyDeckCount + " CONSPIRACIONES",
-      917,
-      443,
-      9,
-      P.muted,
-      "center",
-    );
-    if (board.revealedConspiracy) {
-      const name = conspiracies[board.revealedConspiracy.conspiracy][0];
-      this.rect(638, 474, 324, 41, "#322437", "#74546d", 5);
-      this.text("✧  " + name.toUpperCase(), 800, 495, 14, "#d2a7cc", "center");
+    const revealedConspiracy = this.currentConspiracy(v);
+    this.announceConspiracy(revealedConspiracy);
+    if (revealedConspiracy) {
+      this.conspiracyCard(
+        REVEALED_CONSPIRACY.x,
+        REVEALED_CONSPIRACY.y,
+        REVEALED_CONSPIRACY.w,
+        revealedConspiracy.conspiracy,
+      );
+    } else {
+      this.text("EL BANCO", 800, 265, 10, P.muted, "center");
+      this.text(board.soulBank + "", 800, 308, 47, P.gold, "center", true);
+      this.text("ALMAS", 800, 342, 9, P.gold, "center");
+      this.card(null, 633, 286, 100, { back: true });
+      this.text(
+        board.sinDeckCount + " PECADOS",
+        683,
+        443,
+        9,
+        P.muted,
+        "center",
+      );
+      this.conspiracyCard(847, 306, 140);
+      this.text(
+        board.conspiracyDeckCount + " CONSPIRACIONES",
+        917,
+        443,
+        9,
+        P.muted,
+        "center",
+      );
     }
     if (board.resolvingSin) {
       this.rect(650, 220, 300, 29, "#372d26", "#78623e");
