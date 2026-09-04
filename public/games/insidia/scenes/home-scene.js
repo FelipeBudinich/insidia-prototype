@@ -14,7 +14,7 @@ export function patchShell(root, html) {
   const template = document.createElement("template");
   template.innerHTML = html;
   const key = (node) => node.nodeType === 1
-    ? node.id || node.getAttribute("data-player") || node.getAttribute("data-join") || node.getAttribute("data-tab")
+    ? node.id || node.getAttribute("data-player") || node.getAttribute("data-join")
     : null;
   function patch(parent, desired) {
     let cursor = parent.firstChild;
@@ -71,13 +71,12 @@ export class HomeScene {
   constructor(store, dispatch) {
     this.store = store;
     this.dispatch = dispatch;
-    this.tab = "create";
-    this.screen = "home";
     this.name = localStorage.getItem("insidia.name") ?? "";
     this.humans = 0;
     this.bots = 2;
-    this.visibility = "private";
+    this.visibility = "public";
     this.code = "";
+    this.tableModal = null;
   }
   header() {
     return `<header><button class="quiet" data-rules>Cómo jugar ↗</button></header>`;
@@ -85,65 +84,168 @@ export class HomeScene {
   footer() {
     return `<footer><span>Insidia · Reglas 2.2</span><span>De 3 a 6 almas. Ninguna inocente.</span></footer>`;
   }
+  availableRooms() {
+    return this.store.rooms.filter((room) => room.status === "lobby" &&
+      room.occupiedHumanSeats < room.configuredHumanSeats);
+  }
+  tableSection(visibility) {
+    const rooms = this.availableRooms().filter((room) => room.visibility === visibility);
+    const label = visibility === "public" ? "Mesas públicas" : "Mesas privadas";
+    return `<section id="${visibility}-tables" class="table-section" aria-labelledby="${visibility}-tables-title">
+      <h3 id="${visibility}-tables-title">${label}<span>${rooms.length}</span></h3>
+      ${rooms.length ? rooms.map((room) => `<button type="button" class="table-row" data-join="${escape(room.roomId)}" ${this.disabled()}>
+        <span class="table-row-copy"><strong>${escape(room.hostDisplayName ?? "Esperando anfitrión")}</strong>
+        <span>${room.occupiedHumanSeats} / ${room.configuredHumanSeats} humanos · ${room.botCount} bots</span></span>
+        <span class="table-row-action">${visibility === "private" ? '<span class="table-lock" role="img" aria-label="Con código"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="4" y="8" width="12" height="9" rx="2"/><path d="M6 8V6a4 4 0 0 1 8 0v2"/></svg></span>' : '<span aria-hidden="true">→</span>'}</span>
+      </button>`).join("") : `<p class="table-empty">No hay mesas ${visibility === "public" ? "públicas" : "privadas"} disponibles.</p>`}
+    </section>`;
+  }
   render() {
     const shell = document.getElementById("shell");
-    document.body.classList.toggle("landing", this.screen === "home");
-    if (this.screen === "browser") {
-      this.browser(shell);
+    document.body.classList.add("landing");
+    patchShell(shell, `<section class="home-grid">
+      <img class="landing-logo" src="${logoUrl}" alt="Insidia" decoding="async" fetchpriority="high">
+      <section class="panel table-panel" aria-labelledby="table-panel-title">
+        <div class="panel-top"><h2 id="table-panel-title">Tu lugar en la mesa</h2><small>INVITADO</small></div>
+        <div class="table-directory" tabindex="0" role="region" aria-label="Mesas disponibles">
+          ${this.tableSection("public")}${this.tableSection("private")}
+        </div>
+        <div class="table-panel-actions"><button type="button" data-create class="primary full" ${this.disabled()}>Crear mesa <span aria-hidden="true">＋</span></button>
+          <button class="quiet full" type="button" data-rules>Cómo jugar ↗</button></div>
+      </section></section>` + this.footer());
+    this.bindCommon(shell);
+    shell.querySelector("[data-create]").onclick = () => this.openTableDialog("create");
+    shell.querySelectorAll("[data-join]").forEach((button) => {
+      button.onclick = () => {
+        const room = this.availableRooms().find((r) => r.roomId === button.dataset.join);
+        if (room) this.openTableDialog("join", room);
+      };
+    });
+    this.syncTableDialog();
+  }
+  openTableDialog(mode, room) {
+    if (this.disabled()) return;
+    const dialog = document.getElementById("table-dialog");
+    this.tableReturnFocus = document.activeElement;
+    this.tableModal = { mode, room: room ? { ...room } : null };
+    this.code = "";
+    if (mode === "create") {
+      this.visibility = "public";
+      this.humans = 0;
+      this.bots = 2;
+    }
+    this.store.commandFeedback = null;
+    dialog.oncancel = (event) => {
+      event.preventDefault();
+      this.closeTableDialog();
+    };
+    dialog.onkeydown = (event) => {
+      if (event.key !== "Tab") return;
+      const controls = [...dialog.querySelectorAll("button:not(:disabled), input:not(:disabled), select:not(:disabled)")];
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    dialog.onclose = () => {
+      if (!dialog.open && this.tableModal) this.closeTableDialog();
+    };
+    this.syncTableDialog();
+    dialog.showModal();
+    dialog.scrollTop = 0;
+    dialog.querySelector("#display-name").focus({ preventScroll: true });
+  }
+  closeTableDialog({ restoreFocus = true } = {}) {
+    if (!this.tableModal) return;
+    this.tableModal = null;
+    this.code = "";
+    const dialog = document.getElementById("table-dialog");
+    if (dialog?.open) dialog.close();
+    if (dialog) document.getElementById("table-dialog-content").replaceChildren();
+    if (restoreFocus) {
+      const target = this.tableReturnFocus?.isConnected && !this.tableReturnFocus.disabled
+        ? this.tableReturnFocus : document.querySelector("[data-create]");
+      target?.focus({ preventScroll: true });
+    }
+    this.tableReturnFocus = null;
+  }
+  selectedTableAvailable() {
+    const selected = this.tableModal?.room;
+    return selected && this.availableRooms().some((room) =>
+      room.roomId === selected.roomId && room.visibility === selected.visibility);
+  }
+  syncTableDialog() {
+    if (!this.tableModal) return;
+    if (this.store.view) {
+      this.closeTableDialog({ restoreFocus: false });
       return;
     }
-    patchShell(shell,
-      `<section class="home-grid"><img class="landing-logo" src="${logoUrl}" alt="Insidia" decoding="async" fetchpriority="high"><section class="panel"><div class="panel-top"><h3>Tu lugar en la mesa</h3><small>INVITADO</small></div><div class="field"><label for="display-name">¿Cómo te llaman?</label><input id="display-name" name="displayName" autocomplete="nickname" maxlength="24" placeholder="Tu nombre" value="${escape(this.name)}" required></div><div class="tabs"><button data-tab="create" class="${this.tab === "create" ? "active" : ""}">Crear una sala</button><button data-tab="join" class="${this.tab === "join" ? "active" : ""}">Tengo un código</button></div>${this.tab === "create" ? `<form id="create-form"><div class="field"><label for="visibility">La invitación</label><select id="visibility"><option value="private" ${this.visibility === "private" ? "selected" : ""}>Privada · Solo con código</option><option value="public" ${this.visibility === "public" ? "selected" : ""}>Pública · Abierta a todos</option></select></div><div class="form-grid"><div><label for="humans">Amigos, además de ti</label><select id="humans">${this.options(this.humans)}</select></div><div><label for="bots">Oponentes bot</label><select id="bots">${this.options(this.bots)}</select></div></div><div class="total"><span>Tú + tus invitados</span><strong id="total">${1 + this.humans + this.bots} jugadores</strong></div><button class="primary full" type="submit" ${this.disabled()}>${this.pending("room.create") ? "Enviando…" : "Crear la mesa"} <span style="float:right">→</span></button><p class="command-feedback" role="status">${escape(commandMessage(this.store, "room.create"))}</p><p class="form-help">Juega ahora con bots o invita a tus cómplices.</p></form>` : `<form id="join-form"><label for="private-code">El código de seis dígitos</label><input id="private-code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" value="${escape(this.code)}" style="font-size:30px;letter-spacing:.25em;text-align:center;margin:8px 0 25px"><button class="primary full" ${this.disabled()}>${this.pending("room.joinPrivate") ? "Enviando…" : "Entrar a la mesa →"}</button><p class="command-feedback" role="status">${escape(commandMessage(this.store, "room.joinPrivate"))}</p><p class="form-help">Pídele el código al anfitrión.</p></form>`}<button data-browse class="quiet full" style="margin-top:21px;border-top:1px solid var(--line);padding-top:21px">Explorar salas públicas ↗</button><button class="quiet full" type="button" data-rules>Cómo jugar ↗</button></section></section>` +
-      this.footer());
-    this.bindCommon(shell);
-    shell.querySelector("#display-name").oninput = (e) => {
-      this.name = e.target.value;
+    const { mode, room } = this.tableModal;
+    const creating = mode === "create";
+    const privateJoin = !creating && room.visibility === "private";
+    const type = creating ? "room.create" : privateJoin ? "room.joinPrivate" : "room.joinPublic";
+    const origin = creating ? type : `${type}:${room.roomId}`;
+    const unavailable = !creating && !this.selectedTableAvailable();
+    const total = 1 + this.humans + this.bots;
+    const invalidTotal = creating && (total < 3 || total > 6);
+    const pending = this.pending(type, origin);
+    const feedback = pending ? "Enviando…" : unavailable ? "Esta mesa ya no está disponible. Elige otra mesa." :
+      !this.store.connected || this.store.reconnecting ? "Esperando conexión con la mesa…" :
+      invalidTotal ? errors.INVALID_ROOM_CONFIG : commandMessage(this.store, type, origin);
+    const target = document.getElementById("table-dialog-content");
+    patchShell(target, `<div class="table-dialog-heading"><div><div class="eyebrow">${creating ? "Un nuevo pacto" : privateJoin ? "Mesa privada · Con código" : "Mesa pública"}</div>
+        <h2 id="table-dialog-title">${creating ? "Crear mesa" : "Tomar asiento"}</h2></div>
+        <button type="button" class="quiet table-dialog-close" data-close-table aria-label="Cerrar">×</button></div>
+      ${creating ? "" : `<p class="table-dialog-host">${escape(room.hostDisplayName ?? "Esperando anfitrión")}</p>`}
+      <form id="${creating ? "create-form" : "join-form"}">
+        <div class="field"><label for="display-name">¿Cómo te llaman?</label><input id="display-name" name="displayName" autocomplete="nickname" maxlength="24" placeholder="Tu nombre" value="${escape(this.name)}" required></div>
+        ${creating ? `<div class="field"><label for="visibility">La invitación</label><select id="visibility"><option value="public" ${this.visibility === "public" ? "selected" : ""}>Pública · Abierta a todos</option><option value="private" ${this.visibility === "private" ? "selected" : ""}>Privada · Con código</option></select></div>
+          <div class="form-grid"><div><label for="humans">Amigos, además de ti</label><select id="humans">${this.options(this.humans)}</select></div><div><label for="bots">Oponentes bot</label><select id="bots">${this.options(this.bots)}</select></div></div>
+          <div class="total"><span>Tú + tus invitados</span><strong id="total">${total} jugadores</strong></div>` : privateJoin ? `<div class="field"><label for="private-code">El código de seis dígitos</label><input id="private-code" name="code" inputmode="numeric" autocomplete="off" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" value="${escape(this.code)}" aria-describedby="table-form-help"></div>` : ""}
+        <button class="primary full" type="submit" aria-describedby="table-command-feedback" ${unavailable || invalidTotal ? "disabled" : this.disabled()}>${pending ? "Enviando…" : creating ? "Crear la mesa →" : "Entrar a la mesa →"}</button>
+        <p id="table-command-feedback" class="command-feedback" role="status">${escape(feedback)}</p>
+        <p id="table-form-help" class="form-help">${creating ? "Juega ahora con bots o invita a tus cómplices." : privateJoin ? "Pídele el código al anfitrión." : "Tu asiento te espera."}</p>
+      </form>`);
+    target.querySelector("[data-close-table]").onclick = () => this.closeTableDialog();
+    target.querySelector("#display-name").oninput = (event) => {
+      this.name = event.target.value;
+      event.target.setCustomValidity("");
       localStorage.setItem("insidia.name", this.name);
     };
-    shell.querySelectorAll("[data-tab]").forEach(
-      (b) =>
-        (b.onclick = () => {
-          this.tab = b.dataset.tab;
-          this.render();
-        }),
-    );
-    shell.querySelector("[data-browse]").onclick = () => {
-      this.screen = "browser";
-      this.render();
-    };
-    if (this.tab === "create") {
-      shell.querySelector("#visibility").onchange = (e) =>
-        (this.visibility = e.target.value);
-      for (const field of ["humans", "bots"])
-        shell.querySelector("#" + field).onchange = (e) => {
-          this[field] = Number(e.target.value);
-          shell.querySelector("#total").textContent =
-            `${1 + this.humans + this.bots} jugadores`;
+    if (creating) {
+      target.querySelector("#visibility").onchange = (event) => {
+        this.visibility = event.target.value;
+      };
+      for (const field of ["humans", "bots"]) {
+        target.querySelector("#" + field).onchange = (event) => {
+          this[field] = Number(event.target.value);
+          this.syncTableDialog();
         };
-      shell.querySelector("#create-form").onsubmit = (e) => {
-        e.preventDefault();
-        if (!this.requireName()) return;
-        this.dispatch.send("room.create", {
-          visibility: this.visibility,
-          displayName: this.name.trim(),
-          additionalHumanPlayers: this.humans,
-          botPlayers: this.bots,
-        });
-      };
-    } else {
-      shell.querySelector("#private-code").oninput = (e) => {
-        this.code = e.target.value.replace(/\D/g, "").slice(0, 6);
-        e.target.value = this.code;
-      };
-      shell.querySelector("#join-form").onsubmit = (e) => {
-        e.preventDefault();
-        if (this.requireName())
-          this.dispatch.send("room.joinPrivate", {
-            displayName: this.name.trim(),
-            code: this.code,
-          });
+      }
+    } else if (privateJoin) {
+      target.querySelector("#private-code").oninput = (event) => {
+        this.code = event.target.value.replace(/\D/g, "").slice(0, 6);
+        event.target.value = this.code;
       };
     }
+    target.querySelector("form").onsubmit = (event) => {
+      event.preventDefault();
+      if (this.disabled() || (!creating && !this.selectedTableAvailable()) || invalidTotal || !this.requireName()) return;
+      if (!event.target.reportValidity()) return;
+      const payload = { displayName: this.name.trim() };
+      if (creating) Object.assign(payload, {
+        visibility: this.visibility,
+        additionalHumanPlayers: this.humans,
+        botPlayers: this.bots,
+      });
+      else if (privateJoin) payload.code = this.code;
+      this.dispatch.send(type, payload, room?.roomId, origin);
+      this.syncTableDialog();
+    };
   }
   pending(type, origin = type) {
     return [...this.store.pending.values()].some((entry) => (entry.origin ?? entry.command.type) === origin);
@@ -159,52 +261,16 @@ export class HomeScene {
     ).join("");
   }
   requireName() {
-    if (this.name.trim()) return true;
     const field = document.getElementById("display-name");
-    if (field) {
-      field.focus();
-      field.reportValidity();
-      field.placeholder = "Escribe tu nombre para entrar";
-    } else {
-      this.screen = "home";
-      this.render();
-      document.getElementById("display-name").focus();
-    }
+    if (this.name.replace(/[\p{Cc}\p{Cf}]/gu, "").trim()) return true;
+    field.setCustomValidity("Escribe tu nombre para entrar");
+    field.focus();
+    field.reportValidity();
     return false;
   }
   bindCommon(root) {
-    root
-      .querySelectorAll("[data-rules]")
-      .forEach((b) => (b.onclick = () => this.showRules()));
-  }
-  browser(shell) {
-    patchShell(shell,
-      this.header() +
-      `<section><div class="browser-header"><div><div class="eyebrow" style="margin-bottom:16px">Hay sitio para una mentira más</div><h2>Salas públicas</h2></div><button data-home>← Volver</button></div><div class="rooms">${this.store.rooms.length ? this.store.rooms.map((r) => `<article class="room-card"><span class="eyebrow">MESA ABIERTA</span><h3>${escape(r.hostDisplayName ?? "Esperando anfitrión")}</h3><p>${r.occupiedHumanSeats} / ${r.configuredHumanSeats} humanos · ${r.botCount} bots<br>${r.connectedHumanCount} conectados</p><button class="primary full" data-join="${r.roomId}" ${r.occupiedHumanSeats >= r.configuredHumanSeats ? "disabled" : this.disabled()}>${r.occupiedHumanSeats >= r.configuredHumanSeats ? "Mesa completa" : this.pending("room.joinPublic", `room.joinPublic:${r.roomId}`) ? "Enviando…" : "Tomar asiento →"}</button><p class="command-feedback" role="status">${escape(commandMessage(this.store, "room.joinPublic", `room.joinPublic:${r.roomId}`))}</p></article>`).join("") : `<div class="empty"><span class="gold" style="font-size:45px">◇</span><h3>La primera mesa puede ser tuya.</h3><p>No hay salas públicas todavía. Crea una e invita a jugar.</p><button data-new class="primary">Crear una sala pública</button></div>`}</div></section>` +
-      this.footer());
-    this.bindCommon(shell);
-    shell.querySelector("[data-home]").onclick = () => {
-      this.screen = "home";
-      this.render();
-    };
-    const newButton = shell.querySelector("[data-new]");
-    if (newButton) newButton.onclick = () => {
-      this.screen = "home";
-      this.visibility = "public";
-      this.render();
-    };
-    shell.querySelectorAll("[data-join]").forEach(
-      (b) =>
-        (b.onclick = () => {
-          if (this.requireName())
-            this.dispatch.send(
-              "room.joinPublic",
-              { displayName: this.name.trim() },
-              b.dataset.join,
-              `room.joinPublic:${b.dataset.join}`,
-            );
-        }),
-    );
+    root.querySelectorAll("[data-rules]").forEach((button) =>
+      (button.onclick = () => this.showRules()));
   }
   showRules() {
     const target = document.getElementById("rules-content");

@@ -272,9 +272,15 @@ function publicCard(r: Room, id: string, env: Environment) {
 }
 export function directory(rooms: Room[]) {
   return rooms
-    .filter((r) => r.status === "lobby" && r.visibility === "public")
+    .filter(
+      (r) =>
+        r.status === "lobby" &&
+        r.seats.filter((s) => s.kind === "human").length <
+          1 + r.config.additionalHumanPlayers,
+    )
     .map((r) => ({
       roomId: r.roomId,
+      visibility: r.visibility,
       hostDisplayName:
         r.seats.find((s) => s.playerId === r.hostPlayerId)?.displayName ?? null,
       occupiedHumanSeats: r.seats.filter((s) => s.kind === "human").length,

@@ -67,7 +67,7 @@ export const InsidiaGame = ig.Game.extend({
     const state = this.store.view?.public.room.status;
     document.body.classList.toggle(
       "landing",
-      !this.store.view && this.home.screen === "home",
+      !this.store.view,
     );
     document.body.classList.toggle(
       "match",
@@ -78,6 +78,7 @@ export const InsidiaGame = ig.Game.extend({
     connected.textContent = this.superseded
       ? "Esta sesión está abierta en otra pestaña. Recarga para volver aquí."
       : "Conectando con la mesa…";
+    if (this.store.view) this.home.closeTableDialog({ restoreFocus: false });
     if (!this.store.connected || !this.store.view) this.home.render();
     else if (state === "lobby") this.lobby.render();
     else if (state === "faulted") {

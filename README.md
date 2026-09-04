@@ -7,10 +7,16 @@ Production: https://insidia2-fff10b5a3a38.herokuapp.com/
 
 ## Play
 
-Enter a guest name and create a public or private table. For a solo game, choose
-zero additional humans and two bots. Mark yourself ready and start. In a private
-table, share its six-digit code with the other humans. Every human must be ready
-before the host can start. A refresh or reconnect restores your seat.
+The landing page lists available public tables, followed by private tables, with
+open human seats. Select a public table and enter your guest name to join; a
+private table also asks for its six-digit code. Codes are never shown in the list.
+
+Choose **Crear mesa** below the list to open the creation dialog. Tables default
+to public, with private available as an option. The initial setup is a solo game
+with zero additional humans and two bots; add human seats to invite others. In a
+private table, share its code with your guests. Mark yourself ready and start.
+Every human must be ready before the host can start. A refresh or reconnect
+restores your seat.
 
 The in-game rules cover all eight Sins and six Conspiracies. Every claim, shuffle,
 challenge, counter, choice, timeout, cleanup and victory is resolved by the server.

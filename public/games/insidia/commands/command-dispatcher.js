@@ -14,7 +14,7 @@ export class Dispatcher {
       commandId: crypto.randomUUID(),
       payload,
     };
-    if (type === "room.joinPublic") command.roomId = roomId;
+    if (type === "room.joinPublic" || (type === "room.joinPrivate" && roomId)) command.roomId = roomId;
     else if (!["room.create", "room.joinPrivate"].includes(type)) {
       if (!view) return false;
       command.roomId = view.roomId;

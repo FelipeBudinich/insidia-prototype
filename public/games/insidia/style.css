@@ -212,22 +212,132 @@ header {
   color: var(--muted);
   font-size: 11px;
 }
-.tabs {
+.table-panel {
+  min-width: 0;
+}
+.table-panel .panel-top h2 {
+  margin: 0;
+  font-size: 23px;
+}
+.table-directory {
+  max-height: min(48dvh, 420px);
+  min-height: 190px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  padding: 2px 5px 2px 2px;
+}
+.table-section + .table-section {
+  margin-top: 25px;
+}
+.table-section h3 {
   display: flex;
-  gap: 20px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 27px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 19px;
+  margin: 0 0 12px;
 }
-.tabs button {
-  border: 0;
-  border-radius: 0;
-  padding: 0 0 14px;
-  font-size: 13px;
+.table-section h3 > span {
   color: var(--muted);
+  font: 12px Arial, Helvetica, sans-serif;
 }
-.tabs button.active {
-  border-bottom: 2px solid var(--gold);
+.table-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+  padding: 14px;
+  margin-top: 8px;
+  background: #1b1922;
+}
+.table-row-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.table-row-copy strong {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  font-weight: 500;
+}
+.table-row-copy > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.table-row-action {
   color: var(--gold);
+  flex: 0 0 20px;
+  text-align: center;
+}
+.table-lock svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.table-empty {
+  margin: 0;
+  padding: 16px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 5px;
+  font-size: 13px;
+}
+.table-panel-actions {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 22px;
+}
+.table-panel-actions [data-create] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.table-panel-actions [data-rules] {
+  margin-top: 8px;
+}
+#table-dialog {
+  width: min(90vw, 470px);
+  max-height: 90dvh;
+  padding: 30px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.table-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+#table-dialog-title {
+  font-size: 30px;
+  margin: 12px 0 0;
+}
+.table-dialog-close {
+  font-size: 25px;
+  padding: 4px 10px;
+  min-width: 44px;
+  min-height: 44px;
+}
+.table-dialog-host {
+  margin: -12px 0 24px;
+  overflow-wrap: anywhere;
+}
+#private-code {
+  font-size: 28px;
+  letter-spacing: .25em;
+  text-align: center;
+}
+.table-directory:focus-visible,
+.table-row:focus-visible,
+#table-dialog button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 .form-grid {
   display: grid;
@@ -269,44 +379,11 @@ footer {
   margin-top: 44px;
   text-transform: uppercase;
 }
-.browser-header,
 .lobby-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 28px;
-}
-.rooms {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  min-height: 290px;
-}
-.room-card {
-  border: 1px solid var(--line);
-  padding: 24px;
-  border-radius: 6px;
-  background: #201d26;
-}
-.room-card h3 {
-  font-size: 25px;
-  margin: 18px 0;
-}
-.room-card p {
-  font-size: 12px;
-}
-.empty {
-  grid-column: 1/-1;
-  border: 1px dashed #443d49;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 45px;
-  text-align: center;
-}
-.empty h3 {
-  margin: 16px 0 8px;
 }
 .lobby-grid {
   display: grid;
@@ -511,9 +588,6 @@ body.match #stage {
   .panel {
     padding: 25px;
   }
-  .rooms {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 @media (max-width: 760px) {
   #shell {
@@ -541,12 +615,6 @@ body.match #stage {
   }
   .seat strong {
     font-size: 17px;
-  }
-  .rooms {
-    grid-template-columns: 1fr;
-  }
-  .browser-header {
-    gap: 20px;
   }
   h2 {
     font-size: 29px;
@@ -587,7 +655,7 @@ body.match #stage {
 /* Landing and pre-game polish; the match keeps its original styles. */
 body:not(.match) #connection { font-size: 16px; padding: 14px max(16px, env(safe-area-inset-right)); }
 body:not(.match) .rule-card p { font-size: 14px; }
-body:not(.match) .panel, body:not(.match) .room-card, body:not(.match) .seat { animation: surface-enter 200ms ease-out; }
+body:not(.match) .panel, body:not(.match) .seat { animation: surface-enter 200ms ease-out; }
 @keyframes surface-enter { from { opacity: .5; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) { body:not(.match) *, body:not(.match) *::before, body:not(.match) *::after { animation-duration: 0s !important; transition-duration: 0s !important; } }
 #boot { position: fixed; inset: 0; z-index: 60; background: #16151b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; color: var(--gold); }

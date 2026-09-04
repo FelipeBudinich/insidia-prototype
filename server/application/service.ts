@@ -536,9 +536,11 @@ export class GameService extends EventEmitter {
     else if (command.type === "room.joinPublic" && command.roomId)
       await this.drain(command.roomId, receivedAt);
     else if (command.type === "room.joinPrivate") {
-      const found = [...this.rooms.values()].find(
-        (r) => r.privateCode === command.payload.code,
-      );
+      const found = command.roomId
+        ? this.rooms.get(command.roomId)
+        : [...this.rooms.values()].find(
+            (r) => r.privateCode === command.payload.code,
+          );
       if (found) await this.drain(found.roomId, receivedAt);
     }
     // Drain can release membership at exact expiry; refresh the current authenticated session.
@@ -596,7 +598,7 @@ export class GameService extends EventEmitter {
               };
             }
             const privateJoin = command.type === "room.joinPrivate";
-            const r = privateJoin
+            const r = privateJoin && !command.roomId
               ? [...this.rooms.values()].find(
                   (r) => r.privateCode === data.code,
                 )
@@ -604,7 +606,8 @@ export class GameService extends EventEmitter {
             demand(
               r &&
                 r.status === "lobby" &&
-                r.visibility === (privateJoin ? "private" : "public"),
+                r.visibility === (privateJoin ? "private" : "public") &&
+                (!privateJoin || r.privateCode === data.code),
               "ROOM_NOT_FOUND_OR_UNAVAILABLE",
             );
             demand(

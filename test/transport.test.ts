@@ -117,6 +117,50 @@ test("HTTP and WebSocket integration: sessions, closed protocol, 3 humans, priva
     const a = await client(),
       b = await client(),
       c = await client();
+    const directory = (roomIds: string[]) =>
+      new Promise<any[]>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          c.ws.off("message", handler);
+          reject(new Error("Expected directory snapshot did not arrive"));
+        }, 2000);
+        const handler = (data: any) => {
+          const message = JSON.parse(data.toString());
+          if (message.kind !== "roomListSnapshot") return;
+          const listedIds = message.rooms.map((room: any) => room.roomId).sort();
+          if (JSON.stringify(listedIds) !== JSON.stringify([...roomIds].sort())) return;
+          clearTimeout(timer);
+          c.ws.off("message", handler);
+          resolve(message.rooms);
+        };
+        c.ws.on("message", handler);
+        c.ws.send(JSON.stringify({ protocolVersion: 1, kind: "roomList.subscribe" }));
+      });
+    assert.deepEqual(await directory([]), []);
+    const privateRoom = await a.send("room.create", {
+      displayName: "Ana",
+      visibility: "private",
+      additionalHumanPlayers: 1,
+      botPlayers: 1,
+    });
+    assert.equal(privateRoom.status, "accepted");
+    const privateListing = await directory([privateRoom.data.roomId]);
+    assert.equal(privateListing.length, 1);
+    assert.equal(privateListing[0].roomId, privateRoom.data.roomId);
+    assert.equal(privateListing[0].visibility, "private");
+    assert.equal("privateCode" in privateListing[0], false);
+    assert.equal((await b.send("room.joinPrivate", {
+      displayName: "Bruno",
+      code: privateRoom.data.privateCode,
+    }, { roomId: randomUUID() })).code, "ROOM_NOT_FOUND_OR_UNAVAILABLE");
+    assert.equal((await b.send("room.joinPrivate", {
+      displayName: "Bruno",
+      code: privateRoom.data.privateCode,
+    }, { roomId: privateRoom.data.roomId })).status, "accepted");
+    assert.deepEqual(await directory([]), []);
+    await b.send("room.leave");
+    assert.equal((await directory([privateRoom.data.roomId])).length, 1);
+    await a.send("room.leave");
+    assert.deepEqual(await directory([]), []);
     const created = await a.send("room.create", {
       displayName: "Ana",
       visibility: "public",
@@ -124,6 +168,7 @@ test("HTTP and WebSocket integration: sessions, closed protocol, 3 humans, priva
       botPlayers: 0,
     });
     assert.equal(created.status, "accepted");
+    assert.equal((await directory([created.data.roomId]))[0].visibility, "public");
     await b.send(
       "room.joinPublic",
       { displayName: "Bruno" },
@@ -139,6 +184,7 @@ test("HTTP and WebSocket integration: sessions, closed protocol, 3 humans, priva
     await c.send("room.setReady", { ready: true });
     const started = await a.send("room.start");
     assert.equal(started.status, "accepted");
+    assert.deepEqual(await directory([]), []);
     // Flush network delivery through a request/response frame on each independent socket.
     for (const user of [a, b, c]) await user.send("room.leave");
     for (const user of [a, b, c]) {

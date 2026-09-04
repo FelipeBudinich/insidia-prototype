@@ -151,7 +151,7 @@ test("room commands persist, replay exactly, reject reused IDs and enforce singl
   );
   await f.service.close();
 });
-test("private room absent from directory; code preserves six digits; no private overfill leak", async () => {
+test("private room directory hides codes, code-only joins work, and full rooms disappear", async () => {
   const f = await setup();
   await f.run(0, "room.create", {
     displayName: "Ana",
@@ -161,15 +161,141 @@ test("private room absent from directory; code preserves six digits; no private 
   });
   const code = f.service.snapshot(f.users[0].digest).self.privateCode;
   assert.match(code, /^\d{6}$/);
-  assert.equal(f.service.list().length, 0);
+  const [listed] = f.service.list();
+  assert.equal(listed.visibility, "private");
+  assert.equal(listed.hostDisplayName, "Ana");
+  assert.deepEqual(Object.keys(listed), [
+    "roomId", "visibility", "hostDisplayName", "occupiedHumanSeats",
+    "configuredHumanSeats", "connectedHumanCount", "botCount", "createdAt",
+    "status", "emptyLobbyExpiresAt",
+  ]);
   assert.equal(
     (await f.run(1, "room.joinPrivate", { displayName: "Bruno", code })).status,
     "accepted",
   );
+  assert.equal(f.service.list().length, 0);
   assert.equal(
     (await f.run(2, "room.joinPrivate", { displayName: "Carla", code })).code,
     "ROOM_NOT_FOUND_OR_UNAVAILABLE",
   );
+  await f.service.close();
+});
+test("directory lists available public and private lobbies and follows vacancies, visibility, closure, and expiry", async () => {
+  const f = await setup();
+  const publicRoom = await f.run(0, "room.create", {
+    displayName: "Ana",
+    visibility: "public",
+    additionalHumanPlayers: 1,
+    botPlayers: 1,
+  });
+  const privateRoom = await f.run(1, "room.create", {
+    displayName: "Bruno",
+    visibility: "private",
+    additionalHumanPlayers: 1,
+    botPlayers: 1,
+  });
+  assert.deepEqual(
+    f.service.list().map((r) => [r.roomId, r.visibility]),
+    [[publicRoom.data.roomId, "public"], [privateRoom.data.roomId, "private"]],
+  );
+  assert.equal((await f.run(2, "room.joinPublic", { displayName: "Carla" }, {
+    roomId: publicRoom.data.roomId,
+  })).status, "accepted");
+  assert.deepEqual(f.service.list().map((r) => r.roomId), [privateRoom.data.roomId]);
+  await f.run(2, "room.leave");
+  assert.equal(f.service.list().length, 2);
+  await f.run(0, "room.configure", { visibility: "private" });
+  assert(f.service.list().every((r) => r.visibility === "private"));
+  await f.run(0, "room.configure", { visibility: "public" });
+  assert.equal(f.service.list()[0].visibility, "public");
+  await f.run(1, "room.leave");
+  assert.deepEqual(f.service.list().map((r) => r.roomId), [publicRoom.data.roomId]);
+  await f.service.disconnect(f.users[0].digest, f.users[0].leaseId, f.now());
+  assert.equal(f.service.list()[0].connectedHumanCount, 0);
+  assert(f.service.list()[0].emptyLobbyExpiresAt);
+  f.advance(1800000);
+  await f.service.drain(publicRoom.data.roomId, f.now());
+  assert.deepEqual(f.service.list(), []);
+  await f.service.close();
+});
+test("selected private joins require that table's code and bind replay to the selected id", async () => {
+  const f = await setup();
+  const created = [];
+  for (const who of [0, 1]) {
+    created.push(await f.run(who, "room.create", {
+      displayName: `Host ${who}`,
+      visibility: "private",
+      additionalHumanPlayers: 1,
+      botPlayers: 1,
+    }));
+  }
+  const [first, second] = created;
+  for (const [roomId, code] of [
+    [first.data.roomId, second.data.privateCode],
+    [randomUUID(), first.data.privateCode],
+  ]) {
+    const result = await f.run(2, "room.joinPrivate", { displayName: "Carla", code }, { roomId });
+    assert.equal(result.code, "ROOM_NOT_FOUND_OR_UNAVAILABLE");
+    assert.equal(f.service.sessions.get(f.users[2].digest)?.binding, undefined);
+  }
+  const commandId = randomUUID();
+  const payload = { displayName: "Carla", code: first.data.privateCode };
+  const accepted = await f.run(2, "room.joinPrivate", payload, { roomId: first.data.roomId, commandId });
+  assert.equal(accepted.status, "accepted");
+  assert.equal(accepted.data.roomId, first.data.roomId);
+  const replay = await f.run(2, "room.joinPrivate", payload, { roomId: first.data.roomId, commandId });
+  assert.equal(replay.replayed, true);
+  assert.equal(f.service.rooms.get(first.data.roomId)!.seats.filter((s) => s.kind === "human").length, 2);
+  await assert.rejects(
+    f.run(2, "room.joinPrivate", payload, { roomId: second.data.roomId, commandId }),
+    /COMMAND_ID_REUSED/,
+  );
+  await f.service.close();
+});
+test("selected private joins drain the selected lobby at its expiry boundary", async () => {
+  for (const elapsed of [1799999, 1800000]) {
+    const f = await setup();
+    const created = await f.run(0, "room.create", {
+      displayName: "Ana",
+      visibility: "private",
+      additionalHumanPlayers: 1,
+      botPlayers: 1,
+    });
+    await f.service.disconnect(f.users[0].digest, f.users[0].leaseId, f.now());
+    f.advance(elapsed);
+    const result = await f.run(1, "room.joinPrivate", {
+      displayName: "Bruno",
+      code: created.data.privateCode,
+    }, { roomId: created.data.roomId });
+    if (elapsed < 1800000) {
+      assert.equal(result.status, "accepted");
+      assert.equal(f.service.rooms.get(created.data.roomId)!.emptyLobbyExpiry, undefined);
+    } else {
+      assert.equal(result.code, "ROOM_NOT_FOUND_OR_UNAVAILABLE");
+      assert.equal(f.service.rooms.get(created.data.roomId)!.status, "closed");
+    }
+    assert.equal(f.service.list().length, 0);
+    await f.service.close();
+  }
+});
+test("concurrent selected private joins cannot claim the same final human seat", async () => {
+  const f = await setup();
+  const created = await f.run(0, "room.create", {
+    displayName: "Ana",
+    visibility: "private",
+    additionalHumanPlayers: 1,
+    botPlayers: 1,
+  });
+  const results = await Promise.all([1, 2].map((who) => f.service.enqueue(() =>
+    f.run(who, "room.joinPrivate", {
+      displayName: `Guest ${who}`,
+      code: created.data.privateCode,
+    }, { roomId: created.data.roomId }),
+  )));
+  assert.deepEqual(results.map((r) => r.status), ["accepted", "rejected"]);
+  assert.equal(results[1].code, "ROOM_NOT_FOUND_OR_UNAVAILABLE");
+  assert.equal(f.service.rooms.get(created.data.roomId)!.seats.filter((s) => s.kind === "human").length, 2);
+  assert.equal(f.service.list().length, 0);
   await f.service.close();
 });
 test("readiness survives disconnect/reconnect; equal configure is version-preserving", async () => {
@@ -196,6 +322,7 @@ test("readiness survives disconnect/reconnect; equal configure is version-preser
     f.service.snapshot(f.users[0].digest).public.room.status,
     "active",
   );
+  assert.equal(f.service.list().length, 0);
   await f.service.close();
 });
 test("actual config mutation clears non-host readiness and preserves host readiness", async () => {
@@ -217,7 +344,7 @@ test("actual config mutation clears non-host readiness and preserves host readin
   assert.equal(v.public.players[0].ready, true);
   assert.equal(v.public.players[1].ready, false);
   assert.equal(v.self.privateCode, undefined);
-  assert.equal(f.service.list().length, 1);
+  assert.equal(f.service.list().length, 0);
   await f.service.close();
 });
 test("superseded lease neither changes state nor claims a receipt or disconnects replacement", async () => {
@@ -339,4 +466,25 @@ test("closed recursive wire schemas reject forged fields, identifiers and malfor
     { ...base, commandId: "fake" },
   ])
     assert.equal(commandSchema.safeParse(cmd).success, false);
+});
+test("private join wire schema accepts a selected table or legacy code and validates both", () => {
+  const command = {
+    protocolVersion: 1,
+    kind: "command",
+    commandId: randomUUID(),
+    type: "room.joinPrivate",
+    payload: { displayName: "Ana", code: "004271" },
+  };
+  assert(commandSchema.safeParse(command).success);
+  assert(commandSchema.safeParse({ ...command, roomId: randomUUID() }).success);
+  for (const invalid of [
+    { ...command, roomId: "fake" },
+    { ...command, roomId: null },
+    { ...command, payload: { displayName: "Ana" } },
+    { ...command, payload: { ...command.payload, code: 4271 } },
+    { ...command, payload: { ...command.payload, code: "4271" } },
+    { ...command, payload: { ...command.payload, code: "abcdef" } },
+    { ...command, payload: { ...command.payload, roomId: randomUUID() } },
+    { ...command, expectedStateVersion: 1 },
+  ]) assert.equal(commandSchema.safeParse(invalid).success, false);
 });

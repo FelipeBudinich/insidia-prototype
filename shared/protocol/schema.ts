@@ -107,9 +107,9 @@ const schemas = Object.entries(payloads).map(([type, payload]) =>
     ...base,
     type: z.literal(type),
     payload,
-    ...(type === "room.create" || type === "room.joinPrivate"
+    ...(type === "room.create"
       ? {}
-      : { roomId: uuid }),
+      : { roomId: type === "room.joinPrivate" ? uuid.optional() : uuid }),
     ...(["room.create", "room.joinPublic", "room.joinPrivate"].includes(type)
       ? {}
       : { expectedStateVersion: version }),

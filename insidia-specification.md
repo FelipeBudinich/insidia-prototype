@@ -145,15 +145,19 @@ A private lobby receives a cryptographically generated string from `000000` thro
 
 ### 5.3 Join room
 
-- Public rooms appear in a live directory with room ID, current host display name when one exists, occupied/configured human seats, connected-human count, bot count, creation time, and lobby status. A public lobby with no connected humans remains listed and joinable until its persisted empty-lobby deadline; the directory includes that deadline. A private lobby likewise retains its code and remains joinable until that deadline.
-- A user joins a public room by room ID.
-- A user joins a private room by entering exactly six decimal digits.
+- The landing panel shows public tables followed by private tables, including only lobbies with an open human seat. Each group keeps its heading and an empty message when no tables are available. Rows identify the host and human/bot counts; private rows show a lock. The create button remains below the scrollable directory.
+- Public and private lobbies appear in a live directory with room ID, visibility, current host display name when one exists, occupied/configured human seats, connected-human count, bot count, creation time, and lobby status. A lobby with no connected humans remains listed if it has an open human seat, and joinable until its persisted empty-lobby deadline; the directory includes that deadline. Private invitation codes are never included in directory metadata. Full lobbies disappear from the directory and return if a human seat reopens.
+- Selecting a public table opens a dialog asking for a display name; it joins by room ID.
+- Selecting a private table opens a dialog asking for a display name and exactly six decimal digits. The client supplies the selected room ID as well as the code; the server requires the code to belong to that room. The `room.joinPrivate` envelope accepts an optional `roomId` so existing code-only clients remain supported.
+- The create dialog asks for name, visibility and human/bot counts. Each fresh opening defaults to public with zero additional humans and two bots; private is an option. Names are prefilled from local storage. Live directory updates preserve dialog drafts and focus; an unavailable or visibility-changed selection disables joining. Membership establishment closes the dialog.
 - Private join failures use the same `ROOM_NOT_FOUND_OR_UNAVAILABLE` response for invalid, expired, full, or non-joinable codes.
 - Seat allocation is atomic; simultaneous join attempts cannot overfill a room.
 - Creation and both join paths acquire the guest-session membership lock before changing a room. Concurrent attempts by one session cannot create or occupy seats in different rooms.
 - A room in `active`, `finished`, `faulted`, or `closed` state cannot accept a new participant.
 
 The directory uses non-mutating `roomList.subscribe` and `roomList.unsubscribe` request messages. The server responds with `roomListSnapshot` and may send replacement snapshots when listed rooms change. It never reuses a room's private state projection for discovery.
+
+This landing-directory revision supersedes public-only discovery assumptions elsewhere in this specification. It changes discovery and targeted joining, not private code secrecy or the existing persistence format; no new directory index or database migration is required by the current implementation.
 
 ### 5.4 Lobby rules
 
