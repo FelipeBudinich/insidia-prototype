@@ -7,7 +7,7 @@ import sharp from 'sharp';
 const require = createRequire(import.meta.url);
 const texturePacker = require('free-tex-packer-core');
 
-const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg']);
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 const DEFAULT_OUTPUT_DIR = 'assets';
 
 const toPosixPath = (value) => value.split(path.sep).join('/').replace(/\\/g, '/');

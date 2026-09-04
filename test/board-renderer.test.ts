@@ -5,10 +5,12 @@ import { sins } from "../public/games/insidia/ui/strings.js";
 
 type Bounds = { x: number; y: number; w: number; h: number };
 type Rectangle = Bounds & { fill?: string };
+type DrawnImage = Bounds & { kind: "pecado" | "conspiracy" };
 
 function fixture(t: TestContext, handCount = 2, playerCount = 6) {
   const rectangles: Rectangle[] = [],
     fills: Rectangle[] = [],
+    images: DrawnImage[] = [],
     texts: { text: string; x: number; y: number }[] = [],
     sent: { type: string; payload: any }[] = [];
   let path: Rectangle | undefined;
@@ -21,6 +23,7 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     },
     fill() { if (path) path.fill = this.fillStyle; },
     stroke() {},
+    clip() {},
     save() {},
     restore() {},
     moveTo() {},
@@ -34,6 +37,19 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     },
     fillText(text: string, x: number, y: number) {
       texts.push({ text, x, y });
+    },
+    drawImage(
+      data: { kind: DrawnImage["kind"] },
+      _sourceX: number,
+      _sourceY: number,
+      _sourceWidth: number,
+      _sourceHeight: number,
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+    ) {
+      images.push({ kind: data.kind, x, y, w, h });
     },
     measureText(text: string) { return { width: text.length * 7 }; },
   };
@@ -104,15 +120,38 @@ function fixture(t: TestContext, handCount = 2, playerCount = 6) {
     },
   };
   const store = { view, version: 1, pending: new Set(), now: () => 0 };
-  const renderer = new BoardRenderer(store, {
-    send(type: string, payload: any) { sent.push({ type, payload }); },
-  }, { showRules() {} });
+  const image = (kind: DrawnImage["kind"], width: number, height: number) => ({
+    loaded: true,
+    data: { kind },
+    width,
+    height,
+    getSourceRect() { return { x: 0, y: 0, width, height }; },
+  });
+  const renderer = new BoardRenderer(
+    store,
+    { send(type: string, payload: any) { sent.push({ type, payload }); } },
+    { showRules() {} },
+    {
+      pecadoBack: image("pecado", 732, 1024),
+      conspiracyBack: image("conspiracy", 1024, 732),
+    },
+  );
   const draw = () => {
-    rectangles.length = fills.length = texts.length = 0;
+    rectangles.length = fills.length = texts.length = images.length = 0;
     renderer.draw(ctx);
   };
   draw();
-  return { renderer, store, rectangles, fills, texts, controls, sent, draw };
+  return {
+    renderer,
+    store,
+    rectangles,
+    fills,
+    images,
+    texts,
+    controls,
+    sent,
+    draw,
+  };
 }
 
 function bounds(r: Bounds): Bounds {
@@ -134,14 +173,20 @@ function assertControlBounds(f: ReturnType<typeof fixture>) {
   });
 }
 
-test("deck and opponent cards use their exact ratios and preserve deck centers", (t) => {
+test("deck and opponent cards use the supplied backs at their exact ratios", (t) => {
   const f = fixture(t);
-  const sinDeck = f.rectangles.find((r) => r.fill === "#25212c")!;
+  const pecadoBacks = f.images.filter((image) => image.kind === "pecado");
+  assert.equal(pecadoBacks.length, 11);
+  const sinDeck = pecadoBacks.find((image) => image.w === 100)!;
   assert.deepEqual(bounds(sinDeck), { x: 633, y: 286, w: 100, h: 140 });
   ratio(sinDeck, 5, 7);
   assert.equal(sinDeck.x + sinDeck.w / 2, 683);
   assert.equal(sinDeck.y + sinDeck.h / 2, 356);
-  const conspiracyDeck = f.rectangles.find((r) => r.fill === "#29212d")!;
+  const conspiracyBacks = f.images.filter(
+    (image) => image.kind === "conspiracy",
+  );
+  assert.equal(conspiracyBacks.length, 1);
+  const conspiracyDeck = conspiracyBacks[0];
   assert.deepEqual(bounds(conspiracyDeck), { x: 847, y: 306, w: 140, h: 100 });
   ratio(conspiracyDeck, 7, 5);
   assert.equal(conspiracyDeck.x + conspiracyDeck.w / 2, 917);
@@ -150,7 +195,7 @@ test("deck and opponent cards use their exact ratios and preserve deck centers",
     { text: "20 PECADOS", x: 683, y: 443 },
     { text: "5 CONSPIRACIONES", x: 917, y: 443 },
   ]);
-  const miniCards = f.rectangles.filter((r) => r.fill === "#39313f");
+  const miniCards = pecadoBacks.filter((image) => image.w === 15);
   assert.equal(miniCards.length, 10);
   for (const mini of miniCards) {
     assert.equal(mini.w, 15);

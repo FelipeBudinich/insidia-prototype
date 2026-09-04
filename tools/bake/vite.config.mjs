@@ -52,6 +52,7 @@ const createBakeConfig = ({ gameName = 'example', emptyOutDir = true } = {}) => 
       createTextureAtlasPlugin({
         sourceDir: gameMediaRoot,
         outputDir: 'assets',
+        webpOptions: gameName === 'insidia' ? { quality: 60 } : { lossless: true },
         injectManifestIntoHtml: false,
         prependManifestToJavaScript: true,
       }),

@@ -8,3 +8,4 @@ public/dist/
 test-results/
 *.log
 .DS_Store
+/source-images/

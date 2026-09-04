@@ -1,4 +1,5 @@
 import { sins, conspiracies, purposes, effectText } from "./strings.js";
+import { assets } from "../media/assets.js";
 const CARD_RATIOS = {
   sin: { width: 5, height: 7 },
   conspiracy: { width: 7, height: 5 },
@@ -18,10 +19,11 @@ const P = {
   red: "#ce837b",
 };
 export class BoardRenderer {
-  constructor(store, dispatch, home) {
+  constructor(store, dispatch, home, cardBackAssets = assets) {
     this.store = store;
     this.dispatch = dispatch;
     this.home = home;
+    this.cardBackAssets = cardBackAssets;
     this.regions = [];
     this.selected = [];
     this.modal = null;
@@ -42,6 +44,28 @@ export class BoardRenderer {
       c.lineWidth = 1;
       c.stroke();
     }
+  }
+  cardBack(image, x, y, w, h, r) {
+    if (!image?.loaded || !image.data) return false;
+    const source = image.getSourceRect(0, 0, image.width, image.height),
+      c = this.ctx;
+    c.save();
+    c.beginPath();
+    c.roundRect(x, y, w, h, r);
+    c.clip();
+    c.drawImage(
+      image.data,
+      source.x,
+      source.y,
+      source.width,
+      source.height,
+      x,
+      y,
+      w,
+      h,
+    );
+    c.restore();
+    return true;
   }
   text(t, x, y, size = 16, color = P.ink, align = "left", serif = false) {
     const c = this.ctx;
@@ -125,19 +149,23 @@ export class BoardRenderer {
       3,
     );
     if (back) {
-      c.strokeStyle = "#65553d";
-      c.lineWidth = 1;
-      for (let i = 1; i < 5; i++) {
-        const d = (Math.min(w, h) * i) / 10;
-        c.beginPath();
-        c.moveTo(x + w / 2, y + h / 2 - d * 1.5);
-        c.lineTo(x + w / 2 + d, y + h / 2);
-        c.lineTo(x + w / 2, y + h / 2 + d * 1.5);
-        c.lineTo(x + w / 2 - d, y + h / 2);
-        c.closePath();
-        c.stroke();
+      if (
+        !this.cardBack(this.cardBackAssets.pecadoBack, x, y, w, h, 7)
+      ) {
+        c.strokeStyle = "#65553d";
+        c.lineWidth = 1;
+        for (let i = 1; i < 5; i++) {
+          const d = (Math.min(w, h) * i) / 10;
+          c.beginPath();
+          c.moveTo(x + w / 2, y + h / 2 - d * 1.5);
+          c.lineTo(x + w / 2 + d, y + h / 2);
+          c.lineTo(x + w / 2, y + h / 2 + d * 1.5);
+          c.lineTo(x + w / 2 - d, y + h / 2);
+          c.closePath();
+          c.stroke();
+        }
+        this.text("I", x + w / 2, y + h / 2, w * 0.34, P.gold, "center", true);
       }
-      this.text("I", x + w / 2, y + h / 2, w * 0.34, P.gold, "center", true);
     } else {
       this.text(
         Object.keys(sins).indexOf(sin) + 1,
@@ -195,16 +223,20 @@ export class BoardRenderer {
     const bounds = cardBounds("conspiracy", x, y, w),
       { h } = bounds;
     this.rect(x, y, w, h, "#29212d", "#74566c", 6);
-    this.rect(x + 7, y + 7, w - 14, h - 14, null, "#594254", 3);
-    this.text("✧", x + w / 2, y + h * 0.4, 50, "#ba96b5", "center", true);
-    this.text(
-      "CONSPIRACIÓN",
-      x + w / 2,
-      y + h * 0.77,
-      8,
-      "#ba96b5",
-      "center",
-    );
+    if (
+      !this.cardBack(this.cardBackAssets.conspiracyBack, x, y, w, h, 6)
+    ) {
+      this.rect(x + 7, y + 7, w - 14, h - 14, null, "#594254", 3);
+      this.text("✧", x + w / 2, y + h * 0.4, 50, "#ba96b5", "center", true);
+      this.text(
+        "CONSPIRACIÓN",
+        x + w / 2,
+        y + h * 0.77,
+        8,
+        "#ba96b5",
+        "center",
+      );
+    }
     return bounds;
   }
   player(p, x, y, isActive, isResponder) {
@@ -249,16 +281,20 @@ export class BoardRenderer {
     );
     this.text(`${p.souls} ◇`, x - 51, y + 25, 20, P.gold, "center");
     const mini = cardBounds("sin", 0, 0, 15);
-    for (let i = 0; i < p.handCount; i++)
-      this.rect(
-        x + 12 + i * 18,
-        y + 12,
-        mini.w,
-        mini.h,
-        "#39313f",
-        "#817252",
-        2,
-      );
+    for (let i = 0; i < p.handCount; i++) {
+      const cardX = x + 12 + i * 18;
+      if (
+        !this.cardBack(
+          this.cardBackAssets.pecadoBack,
+          cardX,
+          y + 12,
+          mini.w,
+          mini.h,
+          2,
+        )
+      )
+        this.rect(cardX, y + 12, mini.w, mini.h, "#39313f", "#817252", 2);
+    }
     p.faceUpSins.forEach((card, i) => {
       this.rect(
         x - w / 2 + i * 85 + 20,
