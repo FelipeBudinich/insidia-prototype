@@ -82,14 +82,3 @@ test("native and CSS-downscaled pointer positions map to design coordinates", ()
     assert.deepEqual(toDesignPoint(impactPoint), designPoint);
   }
 });
-
-import { viewportResolution } from '../public/games/insidia/resolution.js';
-test('responsive backing is bounded and pointer coordinates round-trip at every QA viewport',()=>{
-  for(const [w,h] of [[1440,900],[1280,720],[1024,768],[844,390]])for(const dpr of [1,1.5,2,3]){
-    const l=viewportResolution(w,h,dpr);assert.equal(l.width,w);assert.equal(l.height,h);assert(l.renderScale<=2);
-    const css={x:w*.4,y:h*.6};
-    const p=toDesignPoint({x:css.x*l.renderScale,y:css.y*l.renderScale},l.renderScale);
-    assert(Math.abs(p.x-css.x)<1e-8&&Math.abs(p.y-css.y)<1e-8);
-    assert.equal(l.backingWidth,Math.round(w*l.renderScale));
-  }
-});

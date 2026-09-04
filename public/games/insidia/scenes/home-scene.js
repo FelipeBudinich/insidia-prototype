@@ -207,35 +207,9 @@ export class HomeScene {
         }),
     );
   }
-  hasLocalDecision() {
-    return this.store.connected && this.store.view?.public.room.status === "active" &&
-      this.store.view.self.legalActions.some((action) => action.type.startsWith("game."));
-  }
-  syncRules() {
-    const dialog = document.getElementById("rules");
-    if (!dialog?.open) return false;
-    if (dialog.dataset.mode === "modal" && this.hasLocalDecision()) {
-      this.rulesScroll = dialog.scrollTop;
-      this.suspendingRules = true;
-      dialog.close();
-      this.suspendingRules = false;
-      this.rulesSuspended = true;
-      return true;
-    }
-    const clock = document.getElementById("rules-clock");
-    const view = this.store.view;
-    const deadline = view?.self.prompt?.deadline ?? view?.public.interaction?.deadline ?? view?.public.turn?.deadline;
-    if (clock) {
-      const seconds = deadline ? Math.max(0, Math.ceil((Date.parse(deadline) - this.store.now()) / 1000)) : null;
-      const label = this.hasLocalDecision() ? "Tu decisión sigue activa" : "La mesa continúa";
-      clock.textContent = view?.public.room.status === "active"
-        ? `${label}${seconds === null ? "" : ` · ${seconds} s`}. El reloj no se detiene al leer.` : "";
-    }
-    return false;
-  }
   showRules() {
     const target = document.getElementById("rules-content");
-    if (!target.childElementCount) target.innerHTML = `<div class="eyebrow">El arte de la insidia</div><h2 id="rules-title" style="margin-top:16px">Confía en nadie.</h2><p id="rules-clock" role="status"></p><p>Gana al resolver <strong class="gold">Orgullo</strong> sin que lo bloqueen, o al ser el último jugador con menos de dos pecados expuestos. Empiezas con 2 almas y 2 pecados ocultos.</p><h3>En tu turno, elige una acción</h3><p>Tomar hasta <strong>2 almas</strong> · Conspirar por <strong>1 alma</strong> · Forzar un descarte al azar por <strong>8 almas</strong> · Declarar un pecado.</p><p>Puedes declarar cualquier pecado que puedas pagar, aunque no esté en tu mano. Los demás deciden si desafiarte, por turnos. Si mentías, revelas un pecado al azar y tu acción termina sin pagar. Si decías la verdad, el desafiante revela uno y tu efecto continúa. Al terminar, las manos vuelven a dos cartas; quien tenga dos o más pecados expuestos queda eliminado.</p><div class="rules-grid">${Object.values(
+    target.innerHTML = `<div class="eyebrow">El arte de la insidia</div><h2 style="margin-top:16px">Confía en nadie.</h2><p>Gana al resolver <strong class="gold">Orgullo</strong> sin que lo bloqueen, o al ser el último jugador con menos de dos pecados expuestos. Empiezas con 2 almas y 2 pecados ocultos.</p><h3>En tu turno, elige una acción</h3><p>Tomar hasta <strong>2 almas</strong> · Conspirar por <strong>1 alma</strong> · Forzar un descarte al azar por <strong>8 almas</strong> · Declarar un pecado.</p><p>Puedes declarar cualquier pecado que puedas pagar, aunque no esté en tu mano. Los demás deciden si desafiarte, por turnos. Si mentías, revelas un pecado al azar y tu acción termina sin pagar. Si decías la verdad, el desafiante revela uno y tu efecto continúa. Al terminar, las manos vuelven a dos cartas; quien tenga dos o más pecados expuestos queda eliminado.</p><div class="rules-grid">${Object.values(
       sins,
     )
       .map(
@@ -255,42 +229,27 @@ export class HomeScene {
         "",
       )}</div><p>Tienes 60 segundos para tu turno, 15 para desafiar o bloquear y 30 para elegir. Si no respondes, tomas almas, pasas o el servidor elige por ti, según la decisión.</p>`;
     const dialog = document.getElementById("rules");
+    dialog.onclose = null;
+    dialog.removeAttribute("aria-labelledby");
+    dialog.removeAttribute("aria-modal");
+    dialog.removeAttribute("data-mode");
+    const inMatch = ["active", "finished"].includes(this.store.view?.public.room.status);
+    if (inMatch) {
+      dialog.showModal();
+      return;
+    }
     if (dialog.open) return;
+    target.querySelector("h2").id = "rules-title";
     this.rulesReturnFocus = document.activeElement;
     dialog.setAttribute("aria-labelledby", "rules-title");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.dataset.mode = "modal";
     dialog.onclose = () => {
       this.rulesScroll = dialog.scrollTop;
-      if (!this.rulesSuspended && !this.suspendingRules && this.rulesReturnFocus?.isConnected)
+      if (this.rulesReturnFocus?.isConnected)
         this.rulesReturnFocus.focus({ preventScroll: true });
     };
-    // A nonmodal drawer deliberately leaves decision controls usable, so
-    // Escape must work even when keyboard focus remains on the table.
-    if (!this.rulesKeyListener) {
-      this.rulesKeyListener = (event) => {
-        if (event.key !== "Escape" || !dialog.open) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        this.rulesScroll = dialog.scrollTop;
-        dialog.close();
-      };
-      document.addEventListener("keydown", this.rulesKeyListener, true);
-    }
-    dialog.onkeydown = (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        this.rulesScroll = dialog.scrollTop;
-        dialog.close();
-      }
-    };
-    const nonmodal = this.hasLocalDecision();
-    dialog.dataset.mode = nonmodal ? "drawer" : "modal";
-    dialog.classList.toggle("rules-drawer", nonmodal);
-    dialog.setAttribute("aria-modal", String(!nonmodal));
-    if (nonmodal) dialog.show();
-    else dialog.showModal();
+    dialog.showModal();
     dialog.scrollTop = this.rulesScroll ?? 0;
-    this.rulesSuspended = false;
-    this.syncRules();
   }
 }

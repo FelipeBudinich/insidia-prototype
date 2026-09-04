@@ -586,25 +586,13 @@ body.match #stage {
   }
 }
 
-/* Responsive table composition uses CSS pixels shared with Canvas/Theseus. */
-body.match #stage { position: fixed; overflow: hidden; }
-#canvas { pointer-events: none; }
-#game-controls { display: none; }
-#connection { font-size: 16px; padding: 14px max(16px, env(safe-area-inset-right)); }
-body.match #connection.visible { top: 60px; left: 16px; right: auto; max-width: min(430px, 60vw); border: 1px solid #806950; border-radius: 6px; box-shadow: 0 12px 35px #0008; }
-.rules-drawer { position: fixed; inset: 64px auto auto max(12px, env(safe-area-inset-left)); margin: 0; width: min(420px, calc(100vw - 334px)); max-height: calc(100dvh - 90px); padding: 24px; z-index: 15; box-shadow: 0 18px 60px #000b; }
-.rules-drawer h2 { font-size: 28px; }
-.rules-drawer .rules-grid { grid-template-columns: 1fr; }
-.rules-drawer p, .rule-card p { font-size: 14px; }
-.rules-drawer form { position: sticky; bottom: -24px; background: #211f28; padding: 12px 0; }
-.rules-drawer [data-rules-clock] { position: sticky; top: -24px; background: #211f28; padding: 12px 0; color: var(--gold); }
-.panel, .room-card, .seat { animation: surface-enter 200ms ease-out; }
+/* Landing and pre-game polish; the match keeps its original styles. */
+body:not(.match) #connection { font-size: 16px; padding: 14px max(16px, env(safe-area-inset-right)); }
+body:not(.match) .rule-card p { font-size: 14px; }
+body:not(.match) .panel, body:not(.match) .room-card, body:not(.match) .seat { animation: surface-enter 200ms ease-out; }
 @keyframes surface-enter { from { opacity: .5; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; } }
-@media (max-height: 500px) { .rules-drawer { max-height: calc(100dvh - 78px); padding: 16px; } }
-@media (orientation: portrait) { body.match #connection.visible { top: 0; left: 0; right: 0; max-width: none; border-radius: 0; } }
+@media (prefers-reduced-motion: reduce) { body:not(.match) *, body:not(.match) *::before, body:not(.match) *::after { animation-duration: 0s !important; transition-duration: 0s !important; } }
 #boot { position: fixed; inset: 0; z-index: 60; background: #16151b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; color: var(--gold); }
 #boot strong { font: 42px Georgia, serif; letter-spacing: .18em; }
 #boot span { font-size: 16px; color: var(--muted); }
 #boot progress { width: min(320px, 70vw); height: 5px; accent-color: var(--gold); }
-:root { --safe-left: env(safe-area-inset-left, 0px); --safe-right: env(safe-area-inset-right, 0px); --safe-top: env(safe-area-inset-top, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); }
